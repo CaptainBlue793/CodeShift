@@ -113,6 +113,65 @@ def test_translator_passes_source_and_deps_to_llm(tmp_path, monkeypatch):
     assert "-> " in captured["user"]                       # rendered signature hint
 
 
+# ------------------------------------------------- dependency context
+
+def _state_with_dep(out_dir, *, dep_translated: bool):
+    """`models` importing `helpers`, which may or may not be translated yet."""
+    state = _state(out_dir)
+    state["files"]["models"]["imports"] = ["helpers"]
+    state["files"]["helpers"] = FileUnit(
+        module="helpers",
+        path="helpers.py",
+        imports=["models"],                       # mutual: this is a cycle
+        source_code="def slug(text):\n    return text.strip().lower()\n",
+        translated_code="export function slug(t: string) { return t.trim(); }"
+        if dep_translated
+        else None,
+        inferred_types=None,
+        status="idiomatic" if dep_translated else "pending",
+        attempts=0,
+        divergences=[],
+    )
+    return state
+
+
+def _captured_prompt(state, monkeypatch) -> str:
+    captured = {}
+
+    def fake_complete(**kwargs):
+        captured.update(kwargs)
+        return CANNED
+
+    monkeypatch.setattr(client, "complete", fake_complete)
+    translator.run(state)
+    return captured["user"]
+
+
+def test_translated_dependency_is_passed_as_target_code(tmp_path, monkeypatch):
+    prompt = _captured_prompt(_state_with_dep(tmp_path, dep_translated=True), monkeypatch)
+    assert "Already-translated dependency interfaces:" in prompt
+    assert "export function slug" in prompt
+    assert "not yet translated" not in prompt
+
+
+def test_a_cycle_dependency_falls_back_to_its_source(tmp_path, monkeypatch):
+    """The whole point: a module translated before its dependency exists used
+    to be told nothing about it, and would call a function it never imported."""
+    prompt = _captured_prompt(_state_with_dep(tmp_path, dep_translated=False), monkeypatch)
+    assert "Circular imports:" in prompt
+    assert "not yet translated" in prompt
+    assert "def slug(text):" in prompt                 # the source, so names are known
+    assert "do not call into it without an import" in prompt
+    # It must not be presented as already-translated target code.
+    assert "Already-translated dependency interfaces:" not in prompt
+
+
+def test_no_dependency_sections_when_there_are_no_dependencies(tmp_path, monkeypatch):
+    prompt = _captured_prompt(_state(tmp_path), monkeypatch)
+    assert "Already-translated dependency interfaces:" not in prompt
+    assert "Circular imports:" not in prompt
+
+
 # ------------------------------------------------- language-pair trip-wires
 
 def test_pitfalls_sheet_is_appended_to_the_system_prompt(tmp_path, monkeypatch):

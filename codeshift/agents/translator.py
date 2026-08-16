@@ -97,18 +97,36 @@ def _degenerate_reason(code: str, source_names: list[str], exports: list[str]) -
     return None
 
 
-def _dependency_context(state: MigrationState, unit: FileUnit) -> str:
-    """Assemble already-translated interfaces of this module's dependencies."""
+def _dependency_context(state: MigrationState, unit: FileUnit) -> tuple[str, str]:
+    """Return (already-translated interfaces, sources of untranslated deps).
+
+    The second is empty for every module in an acyclic project, because
+    translation order guarantees dependencies come first. Inside an import
+    cycle that guarantee cannot hold: one module is translated before its own
+    dependency exists, and passing it nothing about that dependency is how it
+    ends up calling a function it never imported. Its *source* at least carries
+    the names and signatures, which is what the call site needs.
+    """
     files = get_files(state)
-    blocks = []
+    done: list[str] = []
+    pending: list[str] = []
     for dep in unit.get("imports", []):
         dep_unit = files.get(dep)
-        if dep_unit and dep_unit.get("translated_code"):
-            blocks.append(
+        if not dep_unit:
+            continue
+        if dep_unit.get("translated_code"):
+            done.append(
                 f"// ---- dependency: {dep} ({dep_unit['path']}) ----\n"
                 f"{dep_unit['translated_code']}"
             )
-    return "\n\n".join(blocks)
+        else:
+            # Deliberately not commented as target-language code: this is the
+            # *source* language, and it must not read as something to copy.
+            pending.append(
+                f"---- dependency: {dep} ({dep_unit['path']}) "
+                f"- SOURCE, not yet translated ----\n{dep_unit['source_code']}"
+            )
+    return "\n\n".join(done), "\n\n".join(pending)
 
 
 def run(state: MigrationState) -> dict:
@@ -153,9 +171,20 @@ def run(state: MigrationState) -> dict:
     if hints:
         parts += ["", f"Target-language type hints (use these for {tgt_lang} types):", render_hints(hints)]
 
-    deps = _dependency_context(state, unit)
+    deps, pending_deps = _dependency_context(state, unit)
     if deps:
         parts += ["", "Already-translated dependency interfaces:", deps]
+    if pending_deps:
+        parts += [
+            "",
+            f"Circular imports: the {src_lang} module(s) below are in an import cycle "
+            f"with this one, so they have not been translated yet. Their source is "
+            f"given so you can call them correctly. Each will exist as "
+            f"`./<module>` in {tgt_lang} and will export the same public names as "
+            f"its source. Import what you use from it by those names - do not "
+            f"inline it, and do not call into it without an import.",
+            pending_deps,
+        ]
     # On a retry the model MUST see the code that produced the failures below.
     # Without it the line-numbered diagnostics point into a file it was never
     # shown, so its only option is to regenerate from the same source — which at

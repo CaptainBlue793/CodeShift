@@ -19,6 +19,13 @@ When the source uses one of these, emit the right-hand form.
   `lstrip()` and `rstrip()` keep only the half they need.
   `strip(chars)` with an argument strips *that set* from both ends, which is a
   different operation again.
+- `len(s)` counts **code points**; JS `.length` counts UTF-16 code units, so
+  every character above U+FFFF counts twice -- emoji, musical symbols, most CJK
+  extensions, anything in an astral plane. `len("\U0001F600") == 1` but
+  `"\u{1F600}".length === 2`. Emit `[...s].length` when the count is
+  observable. The same split runs through indexing and slicing: `s[i]` and
+  `s[a:b]` walk code points, while `s.charAt(i)` and `s.slice(a, b)` walk code
+  units. `[...s]` gives an array you can index and slice safely.
 - `"a" in s` is a substring test. JS `in` throws on strings -- use `s.includes("a")`.
 - `s[-1]` is the last character. JS yields `undefined` -- use `s.at(-1)`.
 - `str(x)` on a float keeps the decimal: `str(1.0) == "1.0"`, but

@@ -1,8 +1,23 @@
+<div align="center">
+
+<img src="images/codeshift.png" width="96" alt="CodeShift logo">
+
 # CodeShift
 
-A multi-agent code migration system that translates a codebase from one language
-to another **while preserving behavior**. v1 targets **Python → TypeScript**;
-the architecture is language-agnostic behind pluggable adapters.
+**Translate a codebase into another language, and prove the behavior survived.**
+
+A multi-agent migration system that translates module by module and then runs the
+original and the translation on identical inputs to catch what the compiler cannot.
+v1 targets Python → TypeScript; the architecture is language-agnostic behind
+pluggable adapters.
+
+<sub>
+Python 3.12 · LangGraph · Ollama · tree-sitter · networkx · Hypothesis · Streamlit · 190 tests passing
+</sub>
+
+</div>
+
+---
 
 ## Agents
 

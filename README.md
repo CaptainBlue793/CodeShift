@@ -19,25 +19,65 @@ Python 3.12 · LangGraph · Ollama · tree-sitter · networkx · Hypothesis · S
 
 ---
 
-## Agents
+## How it works
 
-1. **Dependency/structure mapper** — builds the dependency DAG and translation order.
-2. **Translator** — emits target code per module, in dependency order (with typed hints).
-3. **Type-inference agent** — dynamic (Python) → static (TypeScript) typing, and
-   runs `tsc` over the emitted code. Code that does not compile goes straight
-   back to the translator, before the expensive differential run.
-4. **Test-equivalence agent** — runs original vs. translated code on identical
-   inputs to catch semantic drift; loops back to the translator on divergence.
-   Classes are covered as well as functions: it builds a fresh instance per call
-   and compares both the return value and **the attributes the object holds
-   afterwards**, so a method that mutates and returns nothing cannot pass
-   vacuously. It also records what it *could not* check — an `async def`, a
-   property, a class whose constructor cannot be built from generated arguments
-   — by name, as unverified rather than counted as passing. "Verified
-   equivalent" always means code was executed and compared, never merely that
-   nothing was found.
-5. **Idiom/style agent** — cleans up literal translations (prettier backstop).
-6. **Reviewer/summarizer** — produces the migration report.
+Six agents on a LangGraph state machine. The outer loop walks modules in
+dependency order; the inner loop is translate ↔ verify, and it is where the
+project actually lives or dies.
+
+```mermaid
+flowchart LR
+    SRC[Source<br/>codebase] --> MAP[<b>Mapper</b><br/>imports → DAG<br/>→ order]
+    MAP --> DIS{Next<br/>module?}
+    DIS -->|module| TR[<b>Translator</b><br/>LLM emits<br/>target code]
+    TR --> TY[<b>Type inference</b><br/>mypy hints<br/>tsc gate]
+    TY --> EQ[<b>Test equivalence</b><br/>run both sides,<br/>compare]
+    EQ --> ID[<b>Idiom</b><br/>best attempt<br/>prettier]
+    ID --> DIS
+    DIS -->|none left| REV[<b>Reviewer</b><br/>migration<br/>report]
+    REV --> OUT[REPORT.md<br/>+ translated code]
+
+    TY -.->|type errors| TR
+    EQ -.->|drift| TR
+```
+
+Dotted edges are retries. A third one is not drawn: output that is empty or exports
+nothing is rejected before it reaches the oracles, because an empty module type-checks
+perfectly and would sail through. All retry paths share **one budget per file**, so a
+module cannot spend its attempts twice.
+
+**1 · Map** — parse every module, resolve imports down to the internal ones, and
+topologically sort the dependency graph. Translating in that order means a module's
+dependencies are already translated when its turn comes, and their signatures go into
+the prompt as context.
+
+**2 · Translate** — one module at a time. On a retry the prompt carries the *previous
+attempt, line-numbered*, framed as "revise this, do not start over" — without it the
+model regenerates from the same source and reproduces the same bug, which is exactly
+what happened for the first several weeks of this project.
+
+**3 · Type-check** — mypy reads the source for hints, `tsc` grades the output. Code that
+does not compile goes straight back to the translator, skipping the differential run,
+because executing code that cannot build tells you nothing.
+
+**4 · Differential test — the part that matters.** Four stages, because "it compiled"
+is not evidence of anything:
+
+| Stage | What it does | Why |
+|---|---|---|
+| **Generate inputs** | Values per parameter type, plus constructor arguments when the callable is a method | A method needs a receiver. Each call gets a *fresh* one, so a diverging call cannot poison every call after it and misattribute the blame. |
+| **Run both sides** | Original and translation in subprocesses on identical inputs, isolated in Docker when it is available | The only way to catch semantics the type system cannot see — `strip()` vs `trim()` disagreeing on `\x1c`, `split()` vs a regex disagreeing on Unicode whitespace. Both were real findings. |
+| **Compare** | Return value, exception type, *and the object's attributes after the call* | Without the last one, a mutating method that returns nothing compares `None` against `undefined` and passes having tested nothing. |
+| **Name what was skipped** | `async def`, properties, constructors that cannot be built from generated arguments — each recorded by name | An untested module must not be indistinguishable from a clean one. "Verified equivalent" always means code ran and matched. |
+
+**5 · Idiom** — every fully-evaluated attempt is scored on `(type errors, distinct failure
+modes)`, and the *best* one is restored here rather than whichever came last. The loop is
+not monotonic: fixing a type error lets a module reach the differential run for the first
+time, which surfaces drift, and fixing that drift can reintroduce the type error. Prettier
+is the formatting backstop.
+
+**6 · Report** — a Markdown migration report: per-module verdict, attempts, what was
+checked, what was not, and the isolation the run actually had.
 
 ## Stack
 

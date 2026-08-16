@@ -19,6 +19,7 @@ dependency, so it is deliberately absent from requirements.txt)
 """
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
 
@@ -64,7 +65,7 @@ def render_png(path: Path) -> None:
         pts = _chevron_points(x)
         _stroke(draw, pts, BLACK, STROKE + 2 * OUTLINE)   # keyline first...
         _stroke(draw, pts, color, STROKE)                 # ...colour inset on top
-    img.resize((SIZE, SIZE), Image.LANCZOS).save(path)
+    img.resize((SIZE, SIZE), Image.Resampling.LANCZOS).save(path)
 
 
 def render_svg(path: Path) -> None:
@@ -100,5 +101,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if isinstance(sys.stdout, io.TextIOWrapper):   # matches main.py
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()

@@ -52,6 +52,21 @@ def test_report_table_and_details():
     assert "the target runtime was unavailable" in r   # the reason, spelled out
 
 
+def test_report_names_circular_imports_and_where_they_were_broken():
+    """A cycle changes what the table means: one module in it was translated
+    before its own dependencies existed, so the report has to say which."""
+    state = _state()
+    state["cycles"] = [["customers", "orders"]]
+    r = build_report(state)
+    assert "Circular imports" in r
+    assert "`customers` -> `orders`" in r
+    assert "broken at **`customers`**" in r
+
+
+def test_report_says_nothing_about_cycles_when_there_are_none():
+    assert "Circular imports" not in build_report(_state())
+
+
 def test_report_empty_project():
     r = build_report({
         "source_lang": "python", "target_lang": "typescript",

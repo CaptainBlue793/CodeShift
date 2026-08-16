@@ -72,6 +72,23 @@ def build_report(state: MigrationState) -> str:
     if isolation:
         lines += [f"> {describe(isolation)}", ""]
 
+    # Same reasoning as isolation: this changes what the table below means. Every
+    # other module is translated with its dependencies already in hand; the
+    # module a cycle is broken at is not, so it had less to work with.
+    cycles = state.get("cycles") or []
+    if cycles:
+        lines += [
+            "> **Circular imports.** Translation order puts a module's dependencies "
+            "first, which is impossible inside a cycle. Each cycle below was broken "
+            "at its first module, and that module was translated before its own "
+            "dependencies existed - with less context than every other module got.",
+            ">",
+        ]
+        for cycle in cycles:
+            chain = " -> ".join(f"`{m}`" for m in cycle)
+            lines.append(f"> - {chain} -> back to `{cycle[0]}`, broken at **`{cycle[0]}`**")
+        lines.append("")
+
     # --- per-module table ---
     if total:
         lines += [

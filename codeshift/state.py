@@ -39,8 +39,12 @@ class MigrationState(TypedDict, total=False):
     output_root: str
     source_lang: str                 # v1: "python"
     target_lang: str                 # v1: "typescript"
-    dep_graph: dict                  # serialized networkx DAG (node_link_data)
+    dep_graph: dict                  # serialized networkx digraph (node_link_data)
     translation_order: list[str]     # topologically sorted module names
+    #: Circular-import groups, each in the order it will be translated. The
+    #: first name in a group is where the cycle was broken, i.e. the module
+    #: translated without all of its dependencies available.
+    cycles: list[list[str]]
     files: dict[str, FileUnit]
     current: Optional[str]           # module being processed now
     max_retries: int
@@ -65,6 +69,7 @@ def new_state(
         target_lang=target_lang,
         dep_graph={},
         translation_order=[],
+        cycles=[],
         files={},
         current=None,
         max_retries=max_retries,

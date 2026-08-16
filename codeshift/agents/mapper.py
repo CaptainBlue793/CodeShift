@@ -17,7 +17,7 @@ log = get_logger(__name__)
 def run(state: MigrationState) -> dict:
     src = registry.source(state["source_lang"])
     project = src.parse(state["source_root"])
-    dep_graph, order = build_order(project)
+    plan = build_order(project)
 
     files: dict[str, FileUnit] = {}
     for mod in project.modules:
@@ -42,7 +42,22 @@ def run(state: MigrationState) -> dict:
             best=None,
         )
 
-    log.info("mapper: %d modules discovered; translation order: %s", len(files), order)
+    log.info("mapper: %d modules discovered; translation order: %s", len(files), plan.order)
+    for cycle in plan.cycles:
+        # Worth a warning, not just a report line: every module after the first
+        # in a cycle is translated before one of its own dependencies exists.
+        log.warning(
+            "mapper: circular imports among %s - breaking the cycle at %s, "
+            "which will be translated without its dependencies available",
+            " <-> ".join(cycle),
+            cycle[0],
+        )
+
     # TODO(mapper): optionally resolve ambiguous/dynamic refs with the LLM
     #   (prompts/mapper.md) before finalizing the order.
-    return {"dep_graph": dep_graph, "translation_order": order, "files": files}
+    return {
+        "dep_graph": plan.graph,
+        "translation_order": plan.order,
+        "cycles": plan.cycles,
+        "files": files,
+    }

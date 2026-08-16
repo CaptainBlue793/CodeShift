@@ -180,8 +180,12 @@ codeshift/
   agents/                         # one module per agent = one graph node
   adapters/                       # per-language plug-ins (python/, typescript/)
   sandbox/                        # container isolation (policy.py decides, loudly)
-  depgraph/  equivalence/  report/  utils/
+  depgraph/                       # dependency graph, cycle handling, order
+  equivalence/  report/  utils/
 ui/                               # Streamlit dashboard (app.py, runner.py)
+tools/                            # dev scripts (make_logo.py)
+images/                           # logo (PNG + SVG)
+tests/fixtures/                   # sample_app, class_app, cyclic_app
 ```
 
 ## Tests
@@ -202,10 +206,11 @@ with roughly one function or class. Every "verified equivalent" result in this
 repo comes from those. Nothing is known about 50+ modules, which is where
 context limits and compounding errors become the real problem.
 
-**Import cycles are not handled.** `depgraph/builder.py` topologically sorts the
-dependency graph and assumes it is acyclic; a project with circular imports
-raises rather than degrading gracefully. Most real Python codebases have at
-least one.
+**Circular imports are handled, but they cost context.** Cycles are condensed
+into strongly-connected components, so the sort always succeeds; each cycle is
+then broken at its least-dependent member and named in the report. That module
+is still translated before its own dependencies exist, so it gets less context
+than every other module — a degradation, not a failure.
 
 **The Docker sandbox has never actually run a container.** Docker is not
 installed on the development machine, so the container path is covered by unit

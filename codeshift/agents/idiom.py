@@ -55,6 +55,11 @@ def run(state: MigrationState) -> dict:
         code = extract_code(client.complete(agent="idiom", system=system, user=code))
 
     path = target.emit(module, code)
+    # Keep the emission as it stood before formatting. `translated_code` is
+    # re-read from the file below, so this is the only surviving record of what
+    # the model actually wrote — and the only way to show what the formatter
+    # changed rather than leaving the two indistinguishable.
+    unit["pre_format_code"] = code
     target.format(path)                 # deterministic backstop (no-op if unavailable)
     unit["translated_code"] = read_text(path)
     unit["status"] = "idiomatic"

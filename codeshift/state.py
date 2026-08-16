@@ -18,6 +18,10 @@ class FileUnit(TypedDict):
     source_code: str
     translated_code: Optional[str]
     first_code: Optional[str]        # the first accepted emission, kept for the retry diff
+    #: What was written to disk *before* the formatter touched it. `translated_code`
+    #: is re-read from the file afterwards, so without this the model's own output
+    #: is unrecoverable and the formatter's contribution is invisible.
+    pre_format_code: Optional[str]
     target_path: Optional[str]       # emitted target file, relative to output_root
     symbol_map: dict[str, str]       # source callable name -> the target's name for it
     inferred_types: Optional[dict]

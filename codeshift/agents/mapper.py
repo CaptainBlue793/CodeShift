@@ -28,6 +28,7 @@ def run(state: MigrationState) -> dict:
             source_code=mod.source_code,
             translated_code=None,
             first_code=None,
+            pre_format_code=None,
             target_path=None,
             symbol_map={},
             inferred_types=None,

@@ -1,0 +1,20 @@
+# Dashboard theme.
+#
+# Every value here is a Tokyo Night colour from `ui/codetheme.py`, so the page
+# chrome, the hand-drawn accents and the syntax highlighting are one palette
+# rather than three that happen to sit together. A TOML file cannot import the
+# module, so `tests/unit/test_ui.py` asserts the two never drift apart.
+#
+#   primaryColor          -> codetheme.LAVENDER    Run button, radio dot, active tab
+#   backgroundColor       -> codetheme.BG          page, and the code panes
+#   secondaryBackgroundColor -> codetheme.BG_ELEVATED   sidebar, raised surfaces
+#   textColor             -> codetheme.FG          body text (a pale lavender)
+[theme]
+base = "dark"
+primaryColor = "#BB9AF7"
+backgroundColor = "#1A1B26"
+secondaryBackgroundColor = "#24283B"
+textColor = "#C0CAF5"
+
+[server]
+headless = true

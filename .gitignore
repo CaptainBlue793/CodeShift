@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+.venv/
+
+# Secrets
+.env
+
+# Node (target-language tooling)
+node_modules/
+
+# Run artifacts (keep the folders, ignore contents)
+data/inputs/*
+data/output/*
+data/cache/*
+!data/**/.gitkeep
+
+# Scratch output dirs from individual runs (--output data/output-<something>)
+data/output-*/
+
+# Machine-specific tooling config. pyrightconfig.json has to name the local
+# interpreter path or Pyright cannot resolve installed packages, so the real
+# file stays local and pyrightconfig.example.json is what ships.
+pyrightconfig.json
+.vscode/
+.claude/settings.local.json

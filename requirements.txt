@@ -1,0 +1,13 @@
+# Runtime dependencies — all free / open-source.
+langgraph>=0.2
+langchain-core>=0.3
+ollama>=0.3
+networkx>=3.0
+tree-sitter>=0.21
+tree-sitter-python>=0.21
+hypothesis>=6.0
+streamlit>=1.36          # live dashboard (ui/app.py)
+
+# Dev / testing (also free):
+pytest>=8.0
+mypy>=1.8

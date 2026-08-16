@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Copy to pyrightconfig.json and point venvPath/venv at your own environment.",
+    "The real file is gitignored because those two paths are machine-specific;",
+    "without them Pyright cannot resolve the installed packages.",
+    "reportTypedDictNotRequiredAccess is disabled deliberately: MigrationState is",
+    "total=False so LangGraph nodes can return partial updates, but new_state()",
+    "always fills every key, which makes state[...] reads safe.",
+    "tests/ relaxes reportArgumentType/reportCallIssue because fixtures pass",
+    "partial mock state on purpose."
+  ],
+  "venvPath": "/path/to/your/envs",
+  "venv": "your-env-name",
+  "typeCheckingMode": "basic",
+  "extraPaths": ["."],
+  "reportTypedDictNotRequiredAccess": "none",
+  "reportMissingModuleSource": "none",
+  "executionEnvironments": [
+    {
+      "root": "tests",
+      "extraPaths": ["."],
+      "reportArgumentType": "none",
+      "reportCallIssue": "none"
+    }
+  ]
+}

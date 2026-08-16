@@ -6,6 +6,8 @@ buggy Python implementation through the harness (no Node needed).
 """
 from pathlib import Path
 
+import datetime
+from codeshift.adapters.python._driver import _normalize
 from codeshift.adapters.base import CallOutcome, FuncSig
 from codeshift.adapters.python.parser import PythonSourceAdapter
 from codeshift.equivalence.diff import classify_divergence
@@ -179,3 +181,50 @@ def test_check_equivalence_reuses_provided_inputs(tmp_path):
     )
     assert used["add"] == fixed["add"]   # reused, not regenerated
     assert divergences == []             # add vs add on identical source
+
+
+# --- values JSON cannot round-trip ----------------------------------------
+# `_normalize` has a twin in `_driver.ts`; the cross-language tests in
+# tests/integration prove the two agree by running both. These pin the Python
+# half's contract on its own, without needing a Node toolchain.
+
+def test_a_set_becomes_a_tagged_sorted_array():
+    """`json.dumps` has no set encoding and falls back to a repr whose order is
+    not stable; JS renders a Set as `{}`, losing the contents outright."""
+    assert _normalize({"b", "a", "c"}) == {"__set__": ["a", "b", "c"]}
+    assert _normalize(frozenset({"b", "a"})) == {"__set__": ["a", "b"]}
+    assert _normalize(set()) == {"__set__": []}
+
+
+def test_set_order_does_not_survive_as_a_difference():
+    """Two spellings of the same set must normalize identically, or a correct
+    translation reports drift for having iterated in another order."""
+    assert _normalize({"c", "a", "b"}) == _normalize({"a", "b", "c"})
+
+
+def test_a_set_is_tagged_so_it_cannot_match_a_plain_list():
+    """An array keeps duplicates and an order; a set does neither. Reporting
+    the difference is the safe direction to be wrong in."""
+    assert _normalize({1, 2}) != _normalize([1, 2])
+
+
+def test_normalization_reaches_into_containers():
+    assert _normalize({"tags": {"b", "a"}}) == {"tags": {"__set__": ["a", "b"]}}
+    assert _normalize([{"z", "y"}]) == [{"__set__": ["y", "z"]}]
+    assert _normalize((1, 2)) == [1, 2]           # a tuple is JSON's array
+
+
+def test_datetimes_become_epoch_milliseconds():
+    """The one representation both languages produce without argument."""
+    aware = datetime.datetime(2020, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc)
+    assert _normalize(aware) == {"__datetime__": 1577934245000}
+    # A naive datetime is *documented* as UTC - Python carries no zone and a JS
+    # Date is always an instant, so the assumption cannot be avoided, only stated.
+    assert _normalize(datetime.datetime(2020, 1, 2, 3, 4, 5)) == _normalize(aware)
+    # date has to be matched after datetime, which subclasses it.
+    assert _normalize(datetime.date(2020, 1, 2)) == {"__datetime__": 1577923200000}
+
+
+def test_ordinary_values_pass_through_untouched():
+    plain = {"n": 1, "s": "hi", "b": True, "none": None, "f": 1.5}
+    assert _normalize(plain) == plain

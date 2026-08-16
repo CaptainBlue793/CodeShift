@@ -16,10 +16,57 @@ Emits a JSON list of `{"ok": bool, "value"|"error": ..., "state": {...}}`.
 returns nothing has no other evidence to compare, and comparing its `None`
 against JavaScript's `undefined` would pass without testing anything.
 """
+import datetime
 import importlib
 import json
 import os
 import sys
+
+
+def _canon(value):
+    """A total order for values that are not mutually comparable.
+
+    Compact separators on purpose: the TypeScript driver sorts by
+    `JSON.stringify`, which emits no spaces, and the two orderings have to agree
+    or the same set comes out differently on each side.
+    """
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _normalize(value):
+    """Put a value into a form the other language can produce exactly.
+
+    `json.dumps` has no encoding for a `set` and falls back to `str()`, which
+    yields `"{'a', 'b'}"` — a repr whose element order is not even stable
+    between runs. JavaScript's `JSON.stringify` renders a `Set` as `{}`, which
+    is worse: the contents disappear, so a *wrong* set compares equal to a
+    right one. Both sides therefore emit a tagged, sorted array instead.
+
+    The tag matters. Untagged, a Python `set` and a plain array would compare
+    equal, and they are not the same thing — an array keeps duplicates and an
+    order. Reporting that as drift is the safe direction to be wrong in.
+
+    Datetimes become epoch milliseconds, which is the one representation both
+    languages can produce without argument. **A naive datetime is read as
+    UTC** — Python's carries no zone and JavaScript's `Date` is always an
+    instant, so some assumption is unavoidable; this one is at least stated.
+    """
+    if isinstance(value, (set, frozenset)):
+        return {"__set__": sorted((_normalize(v) for v in value), key=_canon)}
+    if isinstance(value, dict):
+        return {key: _normalize(v) for key, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize(v) for v in value]
+    # datetime is a subclass of date, so it has to be tested first.
+    if isinstance(value, datetime.datetime):
+        moment = value if value.tzinfo else value.replace(tzinfo=datetime.timezone.utc)
+        return {"__datetime__": int(moment.timestamp() * 1000)}
+    if isinstance(value, datetime.date):
+        moment = datetime.datetime(
+            value.year, value.month, value.day, tzinfo=datetime.timezone.utc
+        )
+        return {"__datetime__": int(moment.timestamp() * 1000)}
+    return value
 
 
 def _state(obj):
@@ -37,7 +84,11 @@ def _state(obj):
         if isinstance(slots, str):
             slots = (slots,)
         attrs = {name: getattr(obj, name) for name in slots if hasattr(obj, name)}
-    return {name: value for name, value in attrs.items() if not callable(value)}
+    return {
+        name: _normalize(value)
+        for name, value in attrs.items()
+        if not callable(value)
+    }
 
 
 def _resolver(module, target):
@@ -88,7 +139,9 @@ def main() -> None:
         except Exception as exc:  # report any error type, don't crash the driver
             results.append({"ok": False, "error": type(exc).__name__})
             continue
-        row = {"ok": True, "value": value}
+        # Return values need the same treatment as state: a function that
+        # returns a set hits the identical encoding gap.
+        row = {"ok": True, "value": _normalize(value)}
         if state is not None:
             row["state"] = state
         results.append(row)

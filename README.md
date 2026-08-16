@@ -222,10 +222,13 @@ untested until someone runs it on a machine with Docker.
 
 - Floats are compared exactly (`equivalence/diff.py`), so numeric code would
   report drift on ordinary rounding differences.
-- Object state that is not JSON-native diverges on correct translations: a
-  Python `set` serializes as `"{'a', 'b'}"` while a JS `Set` serializes as `{}`
-  — which also means a *wrong* set compares equal to a right one. `datetime`
-  and JS `Date` disagree on format.
+- Values with no JSON encoding are normalized to a shared form — sets and JS
+  `Set`s to a tagged sorted array, JS `Map`s to plain objects, dates to epoch
+  milliseconds — but **a naive Python `datetime` is read as UTC**, because it
+  carries no zone while a JS `Date` is always an instant. Code where that
+  assumption is wrong will compare wrongly. Types outside that list (`Decimal`,
+  `bytes`, custom `__eq__`) still fall back to `str()` and can differ on
+  formatting alone.
 - Parse errors are swallowed (`adapters/python/parser.py`) instead of being
   surfaced in the run's error list.
 - Hypothesis cannot shrink (`equivalence/inputs.py`), so a single bug arrives as

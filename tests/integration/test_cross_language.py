@@ -136,6 +136,74 @@ def test_a_class_that_stores_the_wrong_thing_diverges_across_languages(tmp_path)
     assert all(d["category"] == "state_mismatch" for d in divergences)
 
 
+# --- values JSON cannot round-trip on its own -----------------------------
+# A Python `set` has no JSON encoding and used to fall back to `str()`, giving
+# a repr like "{'a', 'b'}". `JSON.stringify(new Set())` gives `{}` — the
+# contents disappear entirely, so a *wrong* set compared equal to a right one.
+# Both drivers now emit a tagged, sorted array.
+
+TAGS_PY = (
+    "class Tags:\n"
+    "    def __init__(self, owner: str) -> None:\n"
+    "        self.owner = owner\n"
+    "        self.seen: set[str] = set()\n"
+    "\n"
+    "    def add(self, tag: str) -> int:\n"
+    "        self.seen.add(tag.strip().lower())\n"
+    "        return len(self.seen)\n"
+)
+
+TAGS_INPUTS = {
+    "Tags.add": {"args": [["  Alpha "], ["BETA"], ["alpha"]],
+                 "ctor": [["ada"], ["ada"], ["ada"]]},
+}
+
+
+def _tags_dirs(tmp_path, ts_body):
+    src, out = tmp_path / "src", tmp_path / "out"
+    src.mkdir()
+    out.mkdir()
+    (src / "tags.py").write_text(TAGS_PY, encoding="utf-8")
+    (out / "tags.ts").write_text(ts_body, encoding="utf-8")
+    return str(src), str(out)
+
+
+_TAGS_TS = (
+    "export class Tags {\n"
+    "  owner: string;\n"
+    "  seen: Set<string> = new Set();\n"
+    "  constructor(owner: string) { this.owner = owner; }\n"
+    "  add(tag: string): number {\n"
+    "    this.seen.add(tag{MUTATION});\n"
+    "    return this.seen.size;\n"
+    "  }\n"
+    "}\n"
+)
+
+
+def test_a_set_survives_the_round_trip_across_languages(tmp_path):
+    """A faithful `Set` translation must compare equal to a Python `set`."""
+    src, out = _tags_dirs(tmp_path, _TAGS_TS.replace("{MUTATION}", ".trim().toLowerCase()"))
+    divergences, unverifiable = _check(
+        src, out, module="tags", src_code=TAGS_PY,
+        target_names={"Tags.add": "Tags.add"}, inputs_by_func=TAGS_INPUTS,
+    )
+    assert unverifiable == []
+    assert divergences == []
+
+
+def test_a_set_holding_the_wrong_contents_is_caught(tmp_path):
+    """The regression that matters: `JSON.stringify(new Set())` is `{}`, so
+    before normalization this passed while storing entirely wrong values."""
+    src, out = _tags_dirs(tmp_path, _TAGS_TS.replace("{MUTATION}", ""))  # no trim/lower
+    divergences, _ = _check(
+        src, out, module="tags", src_code=TAGS_PY,
+        target_names={"Tags.add": "Tags.add"}, inputs_by_func=TAGS_INPUTS,
+    )
+    assert divergences
+    assert all(d["category"] == "state_mismatch" for d in divergences)
+
+
 USER_PY = (
     "from dataclasses import dataclass\n"
     "\n"

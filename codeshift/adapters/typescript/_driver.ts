@@ -47,12 +47,48 @@ function resolveExport(mod: any, name: string): any {
   return undefined;
 }
 
+// A total order for values that are not mutually comparable. Must agree with
+// the Python driver's `_canon`, which uses sorted keys and no spaces.
+function canon(value: any): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return "[" + value.map(canon).join(",") + "]";
+  const keys = Object.keys(value).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + canon(value[k])).join(",") + "}";
+}
+
+// Put a value into a form the other language can produce exactly.
+//
+// `JSON.stringify` renders a Set or a Map as `{}` — the contents vanish, so a
+// wrong one compares equal to a right one. Python's `json` has no encoding for
+// a set either and falls back to a repr string. Both sides therefore emit a
+// tagged, sorted array for sets, a plain object for Maps (matching a Python
+// dict), and epoch milliseconds for dates. See `_driver.py:_normalize` — these
+// two functions have to stay in step.
+function normalize(value: any): any {
+  if (value instanceof Set) {
+    return { __set__: [...value].map(normalize).sort((a, b) => (canon(a) < canon(b) ? -1 : canon(a) > canon(b) ? 1 : 0)) };
+  }
+  if (value instanceof Map) {
+    const out: Record<string, any> = {};
+    for (const [key, v] of value) out[String(key)] = normalize(v);
+    return out;
+  }
+  if (value instanceof Date) return { __datetime__: value.getTime() };
+  if (Array.isArray(value)) return value.map(normalize);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, any> = {};
+    for (const [key, v] of Object.entries(value)) out[key] = normalize(v);
+    return out;
+  }
+  return value;
+}
+
 // The receiver's own fields after a call. Methods are dropped whether they live
 // on the instance or the prototype, matching what the Python side compares.
 function state(obj: any): Record<string, any> {
   const out: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj ?? {})) {
-    if (typeof value !== "function") out[key] = value;
+    if (typeof value !== "function") out[key] = normalize(value);
   }
   return out;
 }
@@ -118,7 +154,10 @@ function resolve(mod: any, target: string): Call {
   for (let i = 0; i < inputs.length; i++) {
     const ctorArgs = ctor !== null && i < ctor.length ? ctor[i] : null;
     try {
-      const [value, after] = await call(inputs[i], ctorArgs);
+      const [raw, after] = await call(inputs[i], ctorArgs);
+      // Return values need the same treatment as state: a function that
+      // returns a Set hits the identical encoding gap.
+      const value = normalize(raw);
       results.push(after === null ? { ok: true, value } : { ok: true, value, state: after });
     } catch (e: any) {
       results.push({ ok: false, error: e?.constructor?.name ?? "Error" });

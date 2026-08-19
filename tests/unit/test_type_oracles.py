@@ -226,3 +226,32 @@ def test_tsc_oracle_clean_on_valid_code(tmp_path):
         encoding="utf-8",
     )
     assert TypeScriptTargetAdapter().typecheck(str(tmp_path)) == []
+
+
+# ------------------------------------------------- import specifiers
+
+
+@pytest.mark.parametrize(
+    "from_module, to_module, expected",
+    [
+        ("main", "utils", "./utils"),                       # flat project
+        ("core.codes", "core.text", "./text"),              # same package
+        ("reporting.format", "core.money", "../core/money"),  # sibling package
+        ("app.scenarios", "app.engine", "./engine"),
+        ("posting.ledger", "model.chart", "../model/chart"),
+        ("a.b.c.d", "a.b.x.y", "../x/y"),                   # partial shared root
+        ("a.b.c", "top", "../../top"),                      # climb to the root
+        ("top", "a.b.c", "./a/b/c"),                        # descend from it
+    ],
+)
+def test_import_specifier_matches_the_emitted_layout(from_module, to_module, expected):
+    """`emit` lays dotted modules out as directories; the specifier has to walk
+    that same layout, or every cross-package import is a TS2307."""
+    assert TypeScriptTargetAdapter().import_specifier(from_module, to_module) == expected
+
+
+def test_import_specifier_is_always_relative():
+    """A bare `core/money` resolves against node_modules, not the project."""
+    spec = TypeScriptTargetAdapter().import_specifier("reporting.format", "core.money")
+    assert spec.startswith("./") or spec.startswith("../")
+    assert not spec.endswith(".ts")

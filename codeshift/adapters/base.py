@@ -150,6 +150,18 @@ class TargetAdapter(ABC):
         """Return the names of top-level symbols exported by a target module."""
 
     @abstractmethod
+    def import_specifier(self, from_module: str, to_module: str) -> str:
+        """How `from_module` refers to `to_module` in an import statement.
+
+        The layout of emitted files is this adapter's decision (`emit`), so
+        working out the path between two of them has to be its decision too.
+        The translator passes the result to the model rather than asking it to
+        derive one: a wrong specifier is not a mistake a type diagnostic can
+        talk it out of, because the diagnostic only says the module was not
+        found, never where it actually is.
+        """
+
+    @abstractmethod
     def map_type(self, source_type: str) -> str:
         """Map a source-language type name to a target-language type."""
 

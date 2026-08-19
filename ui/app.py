@@ -61,6 +61,7 @@ PRESETS: dict[str, str] = {
     "sample_app": "4 modules, plain functions",
     "class_app": "classes, methods, object state",
     "cyclic_app": "circular imports",
+    "ledger_app": "31 modules, 8 packages - the scale run (hours, not minutes)",
     CUSTOM: "point it anywhere",
 }
 FIXTURE_PATHS = {name: f"./tests/fixtures/{name}" for name in PRESETS if name != CUSTOM}

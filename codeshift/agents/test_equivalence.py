@@ -22,7 +22,7 @@ from codeshift.adapters import registry
 from codeshift.candidates import record_candidate
 from codeshift.equivalence.harness import check_equivalence
 from codeshift.sandbox import policy
-from codeshift.state import MigrationState, copy_unit, get_files
+from codeshift.state import MigrationState, copy_unit, get_files, unchanged
 from codeshift.utils.logging import get_logger
 
 log = get_logger(__name__)
@@ -32,7 +32,7 @@ def run(state: MigrationState) -> dict:
     module = state.get("current")
     files = get_files(state)
     if not module or module not in files:
-        return {}
+        return unchanged(state)
 
     unit = copy_unit(files[module])
     src_lang = state.get("source_lang", "python")

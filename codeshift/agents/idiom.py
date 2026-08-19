@@ -14,7 +14,7 @@ from codeshift.adapters import registry
 from codeshift.candidates import adopt_best
 from codeshift.config import settings
 from codeshift.llm import client
-from codeshift.state import MigrationState, copy_unit, get_files
+from codeshift.state import MigrationState, copy_unit, get_files, unchanged
 from codeshift.utils.fs import read_text
 from codeshift.utils.logging import get_logger
 from codeshift.utils.text import extract_code
@@ -26,7 +26,7 @@ def run(state: MigrationState) -> dict:
     module = state.get("current")
     files = get_files(state)
     if not module or module not in files:
-        return {}
+        return unchanged(state)
 
     unit = copy_unit(files[module])
 

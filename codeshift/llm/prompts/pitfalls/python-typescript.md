@@ -30,6 +30,24 @@ When the source uses one of these, emit the right-hand form.
 - `s[-1]` is the last character. JS yields `undefined` -- use `s.at(-1)`.
 - `str(x)` on a float keeps the decimal: `str(1.0) == "1.0"`, but
   `String(1.0) === "1"`. Preserve it explicitly if the value is observable.
+- `c.isalnum()`, `.isalpha()` and `.isdigit()` are **Unicode-wide**: they are
+  true for letters and digits in every script, so `"e".isalnum()`,
+  `"\u00ea".isalnum()` and `"\U0002ae6a".isalnum()` are all true. An ASCII class
+  silently drops every one of them past the first --
+  `/[a-z0-9]/i` and `\w` match neither. Emit `/[\p{L}\p{N}]/u` for `isalnum()`,
+  `/\p{L}/u` for `isalpha()`, `/\p{Nd}/u` for `isdigit()`. Test one character at
+  a time: these are per-character predicates, and Python's return `False` on the
+  empty string, which an anchored regex over `""` does not.
+
+## Exceptions
+
+- Python raises **`ValueError`**, `KeyError`, `IndexError`; JavaScript has none
+  of those names, and `throw new Error(...)` produces a value whose class is
+  `Error`. Where a caller can observe *which* error was raised -- a `catch` that
+  discriminates, or a test comparing exception types -- a bare `Error` is a
+  behavior change. Declare the classes the source raises and throw those:
+  `class ValueError extends Error { constructor(message: string) { super(message); this.name = "ValueError"; } }`
+  Reuse one definition per module rather than throwing an anonymous `Error`.
 
 ## Numbers
 

@@ -1,7 +1,8 @@
 """Tests for the type-inference agent: extraction, mapping, and wiring."""
 from codeshift.adapters.python.parser import PythonSourceAdapter
 from codeshift.adapters.typescript.emitter import TypeScriptTargetAdapter
-from codeshift.agents import type_inference
+from codeshift.agents import idiom, test_equivalence, translator, type_inference
+from codeshift.state import FileUnit
 from codeshift.typing_hints import build_type_hints
 
 
@@ -55,3 +56,51 @@ def test_agent_populates_inferred_types():
     assert inferred["source"]["make_user"]["returns"] == "dict"
     assert inferred["target"]["make_user"]["params"]["user_id"] == "number"
     assert inferred["target"]["make_user"]["returns"] == "Record<string, unknown>"
+
+
+# ------------------------------- nodes that skip must still write state
+
+
+def _rejected_state():
+    """A module whose final emission was rejected as degenerate."""
+    return {
+        "source_lang": "python",
+        "target_lang": "typescript",
+        "output_root": "data/output",
+        "current": "core.text",
+        "max_retries": 3,
+        "files": {
+            "core.text": FileUnit(
+                module="core.text",
+                path="core/text.py",
+                imports=[],
+                source_code="def slug(t: str) -> str:\n    return t\n",
+                translated_code="export function slug(t: string) { return t; }",
+                inferred_types=None,
+                status="translated",
+                attempts=3,
+                divergences=[],
+                rejected="the model returned no code at all",
+            )
+        },
+    }
+
+
+def test_a_skipping_node_writes_state_back_instead_of_returning_nothing():
+    """LangGraph raises `InvalidUpdateError` on an empty update.
+
+    Found by a 31-module run, not by the fixtures: the path needs an emission
+    rejected as degenerate *on its last attempt*, so the graph cannot loop back
+    to the translator and hands a rejected unit to a node with nothing to do.
+    On a 4-module project that combination never came up.
+    """
+    update = type_inference.run(_rejected_state())
+    assert update, "a node that skips must still write at least one state key"
+    assert update["files"]["core.text"]["rejected"]
+
+
+def test_a_node_with_no_current_module_writes_state_back():
+    state = _rejected_state()
+    state["current"] = None
+    for node in (translator, type_inference, test_equivalence, idiom):
+        assert node.run(state), f"{node.__name__} returned an empty update"

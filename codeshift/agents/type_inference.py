@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from codeshift.adapters import registry
 from codeshift.config import settings
-from codeshift.state import MigrationState, copy_unit, get_files
+from codeshift.state import MigrationState, copy_unit, get_files, unchanged
 from codeshift.typing_hints import map_types
 from codeshift.utils.logging import get_logger
 
@@ -37,13 +37,13 @@ def run(state: MigrationState) -> dict:
     module = state.get("current")
     files = get_files(state)
     if not module or module not in files:
-        return {}
+        return unchanged(state)
 
     # Reached only when a rejected emission has also run out of retries: the
     # graph loops back to the translator otherwise. Nothing new was written, so
     # keep the rejection as the recorded failure instead of grading a stale file.
     if files[module].get("rejected"):
-        return {}
+        return unchanged(state)
 
     unit = copy_unit(files[module])
     source = registry.source(state.get("source_lang", "python"))

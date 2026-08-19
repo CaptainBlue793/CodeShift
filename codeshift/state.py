@@ -91,3 +91,14 @@ def get_files(state: MigrationState) -> dict[str, FileUnit]:
 def copy_unit(unit: FileUnit) -> FileUnit:
     """Typed shallow copy of a FileUnit (safe to mutate before writing back)."""
     return cast(FileUnit, dict(unit))
+
+
+def unchanged(state: MigrationState) -> dict:
+    """What a node returns when it has decided to do nothing.
+
+    LangGraph rejects an empty update outright (`InvalidUpdateError`), so a node
+    that bails out cannot simply `return {}` — it has to write something back.
+    Rewriting `files` as it found them is that something: a no-op to every
+    reader, and the state a skipping node means to leave behind.
+    """
+    return {"files": get_files(state)}

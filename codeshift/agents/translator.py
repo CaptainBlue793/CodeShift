@@ -16,9 +16,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeshift.adapters import registry
+from codeshift.adapters.base import TargetAdapter
 from codeshift.equivalence.diff import distinct_divergences, render_call
 from codeshift.llm import client
-from codeshift.state import FileUnit, MigrationState, copy_unit, get_files
+from codeshift.state import FileUnit, MigrationState, copy_unit, get_files, unchanged
 from codeshift.typing_hints import build_type_hints, render_hints
 from codeshift.utils.logging import get_logger
 from codeshift.utils.naming import build_symbol_map
@@ -97,15 +98,25 @@ def _degenerate_reason(code: str, source_names: list[str], exports: list[str]) -
     return None
 
 
-def _dependency_context(state: MigrationState, unit: FileUnit) -> tuple[str, str]:
+def _dependency_context(
+    state: MigrationState, unit: FileUnit, target: TargetAdapter, module: str
+) -> tuple[str, str]:
     """Return (already-translated interfaces, sources of untranslated deps).
 
-    The second is empty for every module in an acyclic project, because
-    translation order guarantees dependencies come first. Inside an import
-    cycle that guarantee cannot hold: one module is translated before its own
-    dependency exists, and passing it nothing about that dependency is how it
-    ends up calling a function it never imported. Its *source* at least carries
-    the names and signatures, which is what the call site needs.
+    Each block is labelled with the exact specifier this module must import
+    that dependency by. The model is told the path rather than asked to work it
+    out: in a project of one flat directory every dependency is `./name` and it
+    guesses right, but across packages it has to count directories back to a
+    common root, and it does not. The `TS2307` that follows says only that the
+    module was not found, never where it is, so the retry budget burns without
+    the model ever learning the one fact it was missing.
+
+    The second return value is empty for every module in an acyclic project,
+    because translation order guarantees dependencies come first. Inside an
+    import cycle that guarantee cannot hold: one module is translated before
+    its own dependency exists, and passing it nothing about that dependency is
+    how it ends up calling a function it never imported. Its *source* at least
+    carries the names and signatures, which is what the call site needs.
     """
     files = get_files(state)
     done: list[str] = []
@@ -115,16 +126,19 @@ def _dependency_context(state: MigrationState, unit: FileUnit) -> tuple[str, str
         if not dep_unit:
             continue
         if dep_unit.get("translated_code"):
+            specifier = target.import_specifier(module, dep)
             done.append(
-                f"// ---- dependency: {dep} ({dep_unit['path']}) ----\n"
+                f"// ---- dependency: {dep} ({dep_unit['path']}) "
+                f'- import it from "{specifier}" ----\n'
                 f"{dep_unit['translated_code']}"
             )
         else:
-            # Deliberately not commented as target-language code: this is the
-            # *source* language, and it must not read as something to copy.
+            # No specifier here, deliberately: there is no file at one yet, and
+            # naming a path the model cannot import is what produced a wall of
+            # TS2307s and ambient `declare`s. See the cycle note in `run`.
             pending.append(
-                f"---- dependency: {dep} ({dep_unit['path']}) "
-                f"- SOURCE, not yet translated ----\n{dep_unit['source_code']}"
+                f"---- dependency: {dep} ({dep_unit['path']}) - SOURCE, not yet "
+                f"translated, NOT importable ----\n{dep_unit['source_code']}"
             )
     return "\n\n".join(done), "\n\n".join(pending)
 
@@ -133,7 +147,7 @@ def run(state: MigrationState) -> dict:
     module = state.get("current")
     files = get_files(state)
     if not module or module not in files:
-        return {}
+        return unchanged(state)
 
     unit = copy_unit(files[module])
     src_lang = state.get("source_lang", "python")
@@ -171,18 +185,26 @@ def run(state: MigrationState) -> dict:
     if hints:
         parts += ["", f"Target-language type hints (use these for {tgt_lang} types):", render_hints(hints)]
 
-    deps, pending_deps = _dependency_context(state, unit)
+    deps, pending_deps = _dependency_context(state, unit, target, module)
     if deps:
-        parts += ["", "Already-translated dependency interfaces:", deps]
+        parts += [
+            "",
+            "Already-translated dependency interfaces. Import each one from the "
+            "specifier given in its header, exactly as written:",
+            deps,
+        ]
     if pending_deps:
         parts += [
             "",
             f"Circular imports: the {src_lang} module(s) below are in an import cycle "
-            f"with this one, so they have not been translated yet. Their source is "
-            f"given so you can call them correctly. Each will exist as "
-            f"`./<module>` in {tgt_lang} and will export the same public names as "
-            f"its source. Import what you use from it by those names - do not "
-            f"inline it, and do not call into it without an import.",
+            f"with this one. They have NOT been translated yet - there is no file at "
+            f"their specifier to import, and this module is type-checked and executed "
+            f"before there is one. So do not import them, and do not declare them "
+            f"ambiently (`declare function`/`declare module`): both fail, an import "
+            f"because the file is missing and a declaration because it type-checks "
+            f"and then throws ReferenceError. Instead, translate the small part of "
+            f"the source below that you actually call into a local helper in this "
+            f"module. The duplication is deliberate and is the cost of the cycle.",
             pending_deps,
         ]
     # On a retry the model MUST see the code that produced the failures below.

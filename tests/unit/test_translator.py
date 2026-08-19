@@ -149,7 +149,7 @@ def _captured_prompt(state, monkeypatch) -> str:
 
 def test_translated_dependency_is_passed_as_target_code(tmp_path, monkeypatch):
     prompt = _captured_prompt(_state_with_dep(tmp_path, dep_translated=True), monkeypatch)
-    assert "Already-translated dependency interfaces:" in prompt
+    assert "Already-translated dependency interfaces" in prompt
     assert "export function slug" in prompt
     assert "not yet translated" not in prompt
 
@@ -161,15 +161,106 @@ def test_a_cycle_dependency_falls_back_to_its_source(tmp_path, monkeypatch):
     assert "Circular imports:" in prompt
     assert "not yet translated" in prompt
     assert "def slug(text):" in prompt                 # the source, so names are known
-    assert "do not call into it without an import" in prompt
     # It must not be presented as already-translated target code.
-    assert "Already-translated dependency interfaces:" not in prompt
+    assert "Already-translated dependency interfaces" not in prompt
+
+
+def test_a_cycle_dependency_is_never_given_an_import_path(tmp_path, monkeypatch):
+    """Measured, not assumed: naming a specifier the model cannot import is worse
+    than naming none.
+
+    A cycle member is type-checked and executed *before* its partner is emitted,
+    so no import can resolve and no ambient declaration can run. Told to import
+    from a path, the model produced `TS2307`; told not to inline, it produced
+    `declare module`, which type-checks and then throws `ReferenceError`. Asked
+    plainly to translate the part it calls into a local helper, the cyclic_app
+    fixture went back to 3 of 3 verified.
+    """
+    prompt = _captured_prompt(_state_with_dep(tmp_path, dep_translated=False), monkeypatch)
+    assert "NOT importable" in prompt
+    assert "local helper" in prompt
+    assert "declare" in prompt                       # named as a thing not to do
+    assert "import it from" not in prompt            # no path it cannot use
 
 
 def test_no_dependency_sections_when_there_are_no_dependencies(tmp_path, monkeypatch):
     prompt = _captured_prompt(_state(tmp_path), monkeypatch)
-    assert "Already-translated dependency interfaces:" not in prompt
+    assert "Already-translated dependency interfaces" not in prompt
     assert "Circular imports:" not in prompt
+
+
+# --------------------------------------------- cross-package import paths
+
+
+def _packaged_state(out_dir, *, dep_translated: bool = True):
+    """`reporting.format` importing `core.money` — two different packages."""
+    state = _state(out_dir)
+    del state["files"]["models"]
+    state["current"] = "reporting.format"
+    state["files"]["reporting.format"] = FileUnit(
+        module="reporting.format",
+        path="reporting/format.py",
+        imports=["core.money"],
+        source_code=SOURCE,
+        translated_code=None,
+        inferred_types=None,
+        status="pending",
+        attempts=0,
+        divergences=[],
+    )
+    state["files"]["core.money"] = FileUnit(
+        module="core.money",
+        path="core/money.py",
+        imports=["reporting.format"] if not dep_translated else [],
+        source_code="def format_cents(c):\n    return str(c)\n",
+        translated_code="export function formatCents(c: number) { return String(c); }"
+        if dep_translated
+        else None,
+        inferred_types=None,
+        status="idiomatic" if dep_translated else "pending",
+        attempts=0,
+        divergences=[],
+    )
+    return state
+
+
+def test_cross_package_dependency_carries_a_climbing_specifier(tmp_path, monkeypatch):
+    """The scale-run failure this exists to prevent.
+
+    On a flat project every dependency is `./name` and the model guesses right.
+    Given packages it emitted `./core/money` from inside `reporting/`, which is
+    a `TS2307` on every attempt — the diagnostic says the module was not found
+    but never says where it is, so all three retries burned without converging.
+    """
+    prompt = _captured_prompt(_packaged_state(tmp_path), monkeypatch)
+    assert '"../core/money"' in prompt
+    assert '"./core/money"' not in prompt
+
+
+def test_same_package_dependency_stays_a_sibling_path(tmp_path, monkeypatch):
+    state = _packaged_state(tmp_path)
+    state["files"]["reporting.format"]["imports"] = ["reporting.rows"]
+    state["files"]["reporting.rows"] = FileUnit(
+        module="reporting.rows",
+        path="reporting/rows.py",
+        imports=[],
+        source_code="def row(x):\n    return x\n",
+        translated_code="export function row(x: string) { return x; }",
+        inferred_types=None,
+        status="idiomatic",
+        attempts=0,
+        divergences=[],
+    )
+    prompt = _captured_prompt(state, monkeypatch)
+    assert '"./rows"' in prompt
+
+
+def test_a_specifier_is_given_only_for_a_dependency_that_exists(tmp_path, monkeypatch):
+    """The specifier is a fact about a file on disk, so it is withheld when there
+    is no file — see `test_a_cycle_dependency_is_never_given_an_import_path`."""
+    prompt = _captured_prompt(_packaged_state(tmp_path, dep_translated=False), monkeypatch)
+    assert "Circular imports:" in prompt
+    assert '"../core/money"' not in prompt
 
 
 # ------------------------------------------------- language-pair trip-wires

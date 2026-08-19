@@ -12,7 +12,12 @@ from typing import Literal
 class Settings:
     # --- LLM: local Ollama (free) ---
     model: str = "qwen3:14b"         # alt: "qwen2.5:7b" (faster) or "phi4"
-    max_tokens: int = 8192           # Ollama num_predict cap
+    # num_predict cap. 8192 was enough for the 5-line fixtures and is not
+    # enough for real modules: on a 31-module run, two of the first four
+    # emissions came back empty because a reasoning model spent the whole
+    # budget thinking and had nothing left to write the code with. Each one
+    # burned a retry attempt. The cap costs nothing when it is not reached.
+    max_tokens: int = 16384
     temperature: float = 0.2         # low -> more deterministic code
     ollama_host: str | None = None   # None -> ollama default (localhost:11434)
 

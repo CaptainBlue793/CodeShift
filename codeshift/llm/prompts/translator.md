@@ -34,8 +34,11 @@ patch job, not a fresh translation:
   method or a field folded into a closure reads as behavioral drift. Renaming a
   field to the target's conventions (`total_items` -> `totalItems`) is fine;
   dropping one, or storing something different in it, is not.
-- Import from dependency modules by their relative path without an extension
-  (e.g. `import { makeUser } from "./models"`).
+- **Import each dependency from the specifier printed in its header**, copied
+  exactly (e.g. a header reading `- import it from "../core/money"` means
+  `import { formatCents } from "../core/money"`). The specifier already accounts
+  for the directory this module is emitted into; do not shorten it to `./name`,
+  do not add a file extension, and do not invent a path of your own.
 - Match the dependencies' already-translated interfaces and their exported names.
 - If a construct has no direct target equivalent, choose the closest
   behavior-preserving option and add a brief `// NOTE:` comment.

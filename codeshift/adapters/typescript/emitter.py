@@ -87,6 +87,30 @@ class TypeScriptTargetAdapter(TargetAdapter):
         from codeshift.adapters.typescript.symbols import extract_exports
         return extract_exports(code)
 
+    def import_specifier(self, from_module: str, to_module: str) -> str:
+        """The ES module specifier `from_module` uses to reach `to_module`.
+
+        `emit` lays a dotted module out as nested directories, so a sibling is
+        `./name` but anything in another package needs to climb: `reporting.
+        format` reaches `core.money` as `../core/money`. TypeScript requires
+        the leading `./` or `../` — a bare `core/money` is read as a package in
+        node_modules — and takes no file extension.
+        """
+        source_dir = from_module.split(".")[:-1]
+        target_parts = to_module.split(".")
+
+        shared = 0
+        while (
+            shared < len(source_dir)
+            and shared < len(target_parts) - 1
+            and source_dir[shared] == target_parts[shared]
+        ):
+            shared += 1
+
+        climb = [".."] * (len(source_dir) - shared)
+        descend = target_parts[shared:]
+        return "/".join(climb + descend) if climb else "./" + "/".join(descend)
+
     def map_type(self, source_type: str) -> str:
         return _map_type(source_type)
 

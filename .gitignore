@@ -21,6 +21,7 @@ data/cache/*
 
 # Scratch output dirs from individual runs (--output data/output-<something>)
 data/output-*/
+data/*.log
 
 # Machine-specific tooling config. pyrightconfig.json has to name the local
 # interpreter path or Pyright cannot resolve installed packages, so the real

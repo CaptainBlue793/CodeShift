@@ -185,13 +185,13 @@ codeshift/
 ui/                               # Streamlit dashboard (app.py, runner.py)
 tools/                            # dev scripts (make_logo.py)
 images/                           # logo (PNG + SVG)
-tests/fixtures/                   # sample_app, class_app, cyclic_app
+tests/fixtures/                   # sample_app, class_app, cyclic_app, ledger_app
 ```
 
 ## Tests
 
 ```bash
-"$PY" -m pytest tests -q        # 190 tests
+"$PY" -m pytest tests -q        # 239 tests
 "$PY" -m mypy codeshift
 "$PY" -m pyright
 ```

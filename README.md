@@ -113,11 +113,27 @@ means something different depending on where the code ran.
 
 ## Status
 
-**The architecture is complete; the tool is not yet validated at scale.** All six
+**The architecture is complete, and it has now been run at scale once.** All six
 agents work, the pipeline runs end to end at zero cost on a local model, and
-"verified equivalent" means code was executed and compared. But every result so
-far comes from two small fixtures totalling 7 modules — see
-[Limitations](#limitations) before pointing this at a real codebase.
+"verified equivalent" means code was executed and compared.
+
+On 2026-08-19 it was pointed at `tests/fixtures/ledger_app` — a stdlib-only
+double-entry accounting engine of **31 modules across 8 packages**, 88 dependency
+edges, a graph nine layers deep, and one genuine import cycle. Result: **15 of 31
+modules verified equivalent**, 197 functions and methods executed in both
+languages, 976 divergences recorded, in 2 h 39 min for $0.
+
+- Full report: [`docs/scale-run-2026-08-19.md`](docs/scale-run-2026-08-19.md)
+- Write-up, including the failure that makes the case for differential testing:
+  [Trial Balance](https://claude.ai/code/artifact/38f2af29-db90-4f82-a5c4-ec32e5153047)
+
+The run also found four bugs in this tool that ten modules of fixtures could not
+reach — cross-package imports emitted as `./core/money` from inside `reporting/`,
+a crash on an empty LangGraph state update, a cycle member graded against a file
+that did not exist yet, and empty emissions from a model that spent its whole
+token budget thinking. The first two are fixed, the third is mitigated in the
+prompt, the fourth is worked around. See [Limitations](#limitations) before
+pointing this at a real codebase.
 
 ## Prerequisites
 
@@ -201,16 +217,31 @@ tests/fixtures/                   # sample_app, class_app, cyclic_app, ledger_ap
 Stated plainly, because a migration tool that oversells its own verification is
 worse than no tool. Everything below is known and unfixed.
 
-**Only ever run on small fixtures.** The two test projects total 7 modules, each
-with roughly one function or class. Every "verified equivalent" result in this
-repo comes from those. Nothing is known about 50+ modules, which is where
-context limits and compounding errors become the real problem.
+**Under half the modules survive a real project.** The largest run is 31 modules,
+of which 15 came out verified equivalent — so the honest reading is that this
+finds and reports drift reliably, not that it produces a working translation.
+Nothing is known about 100+ modules. What broke at 31 was rarely the graph and
+usually the translation: Unicode semantics, exception identity, and one regex
+transcribed with doubled backslashes that made a function return an empty string
+for every input while type-checking clean.
 
-**Circular imports are handled, but they cost context.** Cycles are condensed
+**A pitfall note is not a patch.** The prompt carries a sheet of cross-language
+trip-wires, each one found by a differential run. The model applies perhaps half
+of them, and the one it got wrong it got wrong in a way that was worse than the
+bug it was written to prevent. Adding an entry to that sheet needs a run to
+confirm it, exactly like a code change.
+
+**Circular imports are handled, but they cost duplication.** Cycles are condensed
 into strongly-connected components, so the sort always succeeds; each cycle is
-then broken at its least-dependent member and named in the report. That module
-is still translated before its own dependencies exist, so it gets less context
-than every other module — a degradation, not a failure.
+then broken at its least-dependent member and named in the report. That module is
+translated, type-checked *and executed* before its own dependencies exist, which
+means no import it could write would resolve and no ambient declaration would
+run. It is therefore told to translate the part it calls into a local helper, and
+the duplicate stays in the output. Measured on `tests/fixtures/cyclic_app`: told
+to import, `TS2307` and 2 of 3 verified; told not to inline, a `declare module`
+that type-checks and throws `ReferenceError` on every call, still 2 of 3; asked
+for the local helper, 3 of 3. The real fix is not to grade a cycle member until
+its whole cycle is emitted, and that is not done.
 
 **The Docker sandbox has never actually run a container.** Docker is not
 installed on the development machine, so the container path is covered by unit
@@ -238,5 +269,6 @@ untested until someone runs it on a machine with Docker.
   so those classes are reported unverified instead of being tested.
 
 **Results are not reproducible.** The LLM is nondeterministic. The best observed
-runs are 4/4 modules on `sample_app` and 3/3 on `class_app`, every module on the
-first attempt — but a clean run is not guaranteed to repeat.
+runs are 4/4 modules on `sample_app`, 3/3 on `class_app`, 3/3 on `cyclic_app` and
+15/31 on `ledger_app` — but a clean run is not guaranteed to repeat, and every
+figure quoted in this README is one run rather than a measurement.

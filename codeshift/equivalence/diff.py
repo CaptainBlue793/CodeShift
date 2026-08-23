@@ -41,6 +41,79 @@ def _fields(state: dict) -> dict:
     return out
 
 
+# A value that fits on one line is printed whole; past this it is described
+# instead. 120 characters is the same budget `_render_args` gives an input.
+_INLINE_LIMIT = 120
+
+# Characters of context kept either side of the first disagreement.
+_WINDOW = 24
+
+
+def _first_difference(a: str, b: str) -> int:
+    """Index of the first differing character, or the length of the shorter
+    string when one is a prefix of the other."""
+    for i in range(min(len(a), len(b))):
+        if a[i] != b[i]:
+            return i
+    return min(len(a), len(b))
+
+
+def _clip(text: str) -> str:
+    return text if len(text) <= _INLINE_LIMIT else text[: _INLINE_LIMIT - 3] + "..."
+
+
+def _window(text: str, at: int) -> str:
+    """`text` around index `at`, marked where it was cut."""
+    start, end = max(0, at - _WINDOW), min(len(text), at + _WINDOW)
+    return (
+        ("..." if start > 0 else "")
+        + repr(text[start:end])
+        + ("..." if end < len(text) else "")
+    )
+
+
+def describe_values(source: Any, target: Any) -> str:
+    """Spell the difference between two values as briefly as it can be spelled.
+
+    Two 600-character strings differing by one trailing space are, printed in
+    full, 1,200 characters that say nothing: the reader has to diff them by eye,
+    and the model reading them back in a retry prompt does not. That is why the
+    modules whose bug was padding never converged on the 31-module run - the
+    feedback contained the answer and buried it.
+
+    Long values are therefore reduced to the three facts that locate the fault:
+    each side's length, the index they first disagree at, and a window of text
+    around that index. Short values are still printed whole, because for those
+    the value *is* the diagnosis - `source=24 target=28` is how the `len()`
+    trip-wire announces itself, and describing it would destroy it.
+    """
+    source_repr, target_repr = repr(source), repr(target)
+    if len(source_repr) <= _INLINE_LIMIT and len(target_repr) <= _INLINE_LIMIT:
+        return f"source={source_repr} target={target_repr}"
+
+    if isinstance(source, str) and isinstance(target, str):
+        at = _first_difference(source, target)
+        head = f"source len={len(source)} target len={len(target)}"
+
+        # One string is a prefix of the other: the difference is not *at* an
+        # index, it is everything past the shorter one's end, and windowing
+        # both sides would show two near-identical runs of the same padding
+        # character. Name the extra text instead - it is the whole finding.
+        if at == min(len(source), len(target)):
+            longer, side = (
+                (target, "target") if len(target) > len(source) else (source, "source")
+            )
+            extra = longer[at:]
+            return f"{head}; identical up to index {at}, then {side} has {_clip(repr(extra))}"
+
+        return (
+            f"{head}, first differs at index {at}: "
+            f"source={_window(source, at)} target={_window(target, at)}"
+        )
+
+    return f"source={_clip(source_repr)} target={_clip(target_repr)}"
+
+
 def render_call(record: dict, format_args: Callable[[Optional[list]], str]) -> str:
     """Spell a divergence as the call that produced it.
 
@@ -121,7 +194,7 @@ def classify_divergence(
         return None
 
     if not _equal(source.value, target.value):  # both returned
-        return record("value_mismatch", f"source={source.value!r} target={target.value!r}")
+        return record("value_mismatch", describe_values(source.value, target.value))
 
     # A method that mutates its receiver and returns nothing has no other
     # evidence: without this, `None == undefined` would pass it unexamined.
@@ -136,6 +209,7 @@ def classify_divergence(
     if not _equal(_fields(source.state), _fields(target.state)):
         return record(
             "state_mismatch",
-            f"object state after the call: source={source.state!r} target={target.state!r}",
+            "object state after the call: "
+            + describe_values(source.state, target.state),
         )
     return None

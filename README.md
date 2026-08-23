@@ -12,7 +12,7 @@ v1 targets Python → TypeScript; the architecture is language-agnostic behind
 pluggable adapters.
 
 <sub>
-Python 3.12 · LangGraph · Ollama · tree-sitter · networkx · Hypothesis · Streamlit · 190 tests passing
+Python 3.12 · LangGraph · Ollama · tree-sitter · networkx · Hypothesis · Streamlit · 248 tests passing
 </sub>
 
 </div>
@@ -207,7 +207,7 @@ tests/fixtures/                   # sample_app, class_app, cyclic_app, ledger_ap
 ## Tests
 
 ```bash
-"$PY" -m pytest tests -q        # 239 tests
+"$PY" -m pytest tests -q        # 248 tests
 "$PY" -m mypy codeshift
 "$PY" -m pyright
 ```

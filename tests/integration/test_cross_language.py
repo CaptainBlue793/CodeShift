@@ -289,3 +289,101 @@ def test_symbol_map_bridges_camelcase_names(tmp_path):
     )
     assert unverifiable == []
     assert divergences == []
+
+
+# --- a receiver that holds another object ---
+#
+# This is the `app.engine` shape from the 31-module scale run: an object whose
+# field is another object. Every divergence that run reported for that module
+# was the Python driver rendering the nested object as
+# `<posting.ledger.Ledger object at 0x...>` while the TypeScript side compared
+# it field by field. No translation could match that string, and the address
+# moved every run, so the retries could never converge.
+
+NESTED_PY = (
+    "class Chart:\n"
+    "    def __init__(self, name: str) -> None:\n"
+    "        self.name = name\n"
+    "        self.accounts: list[str] = []\n"
+    "\n"
+    "\n"
+    "class Book:\n"
+    "    def __init__(self, name: str) -> None:\n"
+    "        self.chart = Chart(name)\n"
+    "\n"
+    "    def open(self, account: str) -> int:\n"
+    "        self.chart.accounts.append(account.strip().lower())\n"
+    "        return len(self.chart.accounts)\n"
+)
+
+NESTED_TS = (
+    "export class Chart {\n"
+    "  name: string;\n"
+    "  accounts: string[] = [];\n"
+    "  constructor(name: string) { this.name = name; }\n"
+    "}\n"
+    "export class Book {\n"
+    "  chart: Chart;\n"
+    "  constructor(name: string) { this.chart = new Chart(name); }\n"
+    "  open(account: string): number {\n"
+    "    this.chart.accounts.push(account.trim().toLowerCase());\n"
+    "    return this.chart.accounts.length;\n"
+    "  }\n"
+    "}\n"
+)
+
+NESTED_INPUTS = {
+    "Book.open": {"args": [["  Cash "], ["ACCRUALS"]], "ctor": [["main"], ["main"]]},
+}
+
+
+def _nested_dirs(tmp_path, ts_body):
+    src, out = tmp_path / "src", tmp_path / "out"
+    src.mkdir()
+    out.mkdir()
+    (src / "book.py").write_text(NESTED_PY, encoding="utf-8")
+    (out / "book.ts").write_text(ts_body, encoding="utf-8")
+    return str(src), str(out)
+
+
+def _check_nested(tmp_path, ts_body):
+    src, out = _nested_dirs(tmp_path, ts_body)
+    return _check(
+        src, out, module="book", src_code=NESTED_PY,
+        target_names={"Book.open": "Book.open"}, inputs_by_func=NESTED_INPUTS,
+    )
+
+
+def test_a_nested_object_compares_field_by_field(tmp_path):
+    """A correct translation of an object holding an object must come out
+    clean. Before the Python driver walked into it, this reported a divergence
+    on every input and could not be fixed by any translation."""
+    divergences, unverifiable = _check_nested(tmp_path, NESTED_TS)
+
+    assert unverifiable == []
+    assert divergences == []
+
+
+def test_a_nested_object_storing_the_wrong_thing_is_still_caught(tmp_path):
+    """Walking into the object must not blunt the check: `open` returns the
+    right count either way, so the sabotage is visible only two levels down,
+    in `chart.accounts`."""
+    divergences, _ = _check_nested(
+        tmp_path, NESTED_TS.replace("account.trim().toLowerCase()", "account.trim()")
+    )
+
+    assert divergences
+    assert all(d["category"] == "state_mismatch" for d in divergences)
+    # The nested field is named, not summarised as an opaque object.
+    assert any("accounts" in d["detail"] for d in divergences)
+
+
+def test_no_divergence_detail_carries_a_memory_address(tmp_path):
+    """The signature of the bug: a heap address in a compared value. It cannot
+    match, and it is not even stable between two runs of the same code."""
+    divergences, _ = _check_nested(
+        tmp_path, NESTED_TS.replace("account.trim().toLowerCase()", "account.trim()")
+    )
+
+    assert divergences
+    assert not any("object at 0x" in d["detail"] for d in divergences)

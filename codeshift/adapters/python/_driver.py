@@ -33,7 +33,55 @@ def _canon(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def _normalize(value):
+def _attributes(obj):
+    """`obj`'s instance attributes, or None if it is not that kind of value.
+
+    None and `{}` mean different things to the caller: `{}` is an object that
+    happens to hold nothing, None is "read this some other way". Three kinds of
+    value are deliberately refused:
+
+    * **Classes themselves.** `vars(SomeClass)` is the class body -- methods,
+      `__module__`, the lot -- and none of it is the value that was passed.
+    * **Empty `__slots__`.** `pathlib.Path` declares `__slots__ = ()`, so
+      treating "declares slots" as "is an inspectable object" would render a
+      path as `{}` and lose it. Nothing to read means nothing to read.
+    * **Anything with neither.** `Decimal`, `bytes` and the builtins land here
+      and keep the `str()` fallback they have always had.
+    """
+    if isinstance(obj, type):
+        return None
+    try:
+        return dict(vars(obj))
+    except TypeError:
+        # __slots__ (and builtins) have no __dict__; read the declared names.
+        slots = getattr(type(obj), "__slots__", None) or ()
+        if isinstance(slots, str):
+            slots = (slots,)
+        if not slots:
+            return None
+        return {name: getattr(obj, name) for name in slots if hasattr(obj, name)}
+
+
+def _entered(value, seen):
+    """`seen` plus `value`, or None if `value` is already being normalized.
+
+    Everything that recurses can loop: a ledger holding a book that points back
+    at the ledger is ordinary object graph, and a list containing itself is
+    legal Python. Following either forever raises RecursionError from *outside*
+    the per-input try in `main()`, which loses the whole module's results rather
+    than one call's.
+
+    The returned set is a copy, never a mutation. The same object appearing
+    twice side by side in one container is not a cycle, and tagging the second
+    one would report drift against a translation that merely held two of them.
+    """
+    seen = frozenset() if seen is None else seen
+    if id(value) in seen:
+        return None
+    return seen | {id(value)}
+
+
+def _normalize(value, _seen=None):
     """Put a value into a form the other language can produce exactly.
 
     `json.dumps` has no encoding for a `set` and falls back to `str()`, which
@@ -50,13 +98,19 @@ def _normalize(value):
     languages can produce without argument. **A naive datetime is read as
     UTC** — Python's carries no zone and JavaScript's `Date` is always an
     instant, so some assumption is unavoidable; this one is at least stated.
+
+    An ordinary object becomes its attributes. JavaScript has no choice about
+    this — a class instance *is* a bag of properties, and `Object.entries`
+    walks into it — so the TypeScript driver was already comparing a nested
+    object field by field while this side handed `json.dumps` something it had
+    no encoding for and got `<posting.ledger.Ledger object at 0x7f...>` back.
+    That can never match: not a wrong answer the translator could fix, and not
+    even the same string twice, since the address moves every run. On the
+    31-module scale run every divergence reported for `app.engine` was this.
+
+    Untagged, matching the TypeScript side: a translation that turns a Python
+    object into a plain object is doing its job, and the two must compare equal.
     """
-    if isinstance(value, (set, frozenset)):
-        return {"__set__": sorted((_normalize(v) for v in value), key=_canon)}
-    if isinstance(value, dict):
-        return {key: _normalize(v) for key, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_normalize(v) for v in value]
     # datetime is a subclass of date, so it has to be tested first.
     if isinstance(value, datetime.datetime):
         moment = value if value.tzinfo else value.replace(tzinfo=datetime.timezone.utc)
@@ -66,7 +120,28 @@ def _normalize(value):
             value.year, value.month, value.day, tzinfo=datetime.timezone.utc
         )
         return {"__datetime__": int(moment.timestamp() * 1000)}
-    return value
+
+    if not isinstance(value, (set, frozenset, dict, list, tuple)):
+        attributes = _attributes(value)
+        if attributes is None:
+            return value
+        seen = _entered(value, _seen)
+        if seen is None:
+            return {"__cycle__": True}
+        return {
+            name: _normalize(attribute, seen)
+            for name, attribute in attributes.items()
+            if not callable(attribute)
+        }
+
+    seen = _entered(value, _seen)
+    if seen is None:
+        return {"__cycle__": True}
+    if isinstance(value, (set, frozenset)):
+        return {"__set__": sorted((_normalize(v, seen) for v in value), key=_canon)}
+    if isinstance(value, dict):
+        return {key: _normalize(v, seen) for key, v in value.items()}
+    return [_normalize(v, seen) for v in value]
 
 
 def _state(obj):
@@ -76,14 +151,9 @@ def _state(obj):
     instance in some styles and on the prototype in others, and neither is
     behavior worth comparing.
     """
-    try:
-        attrs = dict(vars(obj))
-    except TypeError:
-        # __slots__ (and builtins) have no __dict__; read the declared names.
-        slots = getattr(type(obj), "__slots__", ()) or ()
-        if isinstance(slots, str):
-            slots = (slots,)
-        attrs = {name: getattr(obj, name) for name in slots if hasattr(obj, name)}
+    # The receiver is known to be an object, so "nothing readable" is an empty
+    # state rather than a value to render some other way.
+    attrs = _attributes(obj) or {}
     return {
         name: _normalize(value)
         for name, value in attrs.items()

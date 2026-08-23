@@ -7,6 +7,8 @@ buggy Python implementation through the harness (no Node needed).
 from pathlib import Path
 
 import datetime
+import decimal
+import pathlib
 from codeshift.adapters.python._driver import _normalize
 from codeshift.adapters.base import CallOutcome, FuncSig
 from codeshift.adapters.python.parser import PythonSourceAdapter
@@ -296,3 +298,92 @@ def test_classify_uses_the_compact_detail():
     assert "identical up to index 800" in d["detail"]
     assert repr(TAB) in d["detail"]
     assert len(d["detail"]) < 200
+
+
+# --- objects, which JavaScript has no choice but to walk into ---
+
+class _Chart:
+    # Annotated, not assigned: a bare annotation satisfies the type checker
+    # without putting the name in `vars()`, which is exactly what these tests
+    # read. Assigning defaults here would add fields to every expectation.
+    parent: "_Chart"
+    hook: object
+
+    def __init__(self, name):
+        self.name = name
+
+
+class _Slotted:
+    __slots__ = ("kind",)
+
+    def __init__(self, kind):
+        self.kind = kind
+
+
+def test_an_object_becomes_its_attributes():
+    """`json.dumps(default=str)` rendered this as
+    `<_Chart object at 0x7f...>`: unmatchable by any translation, and not even
+    the same string twice. The TypeScript side always compared field by field,
+    because a class instance there *is* a bag of properties."""
+    assert _normalize(_Chart("assets")) == {"name": "assets"}
+
+
+def test_an_object_is_untagged_so_it_matches_a_plain_object():
+    """Unlike a set. A translation that turns a Python object into a plain
+    object is doing its job, and JS cannot tell the two apart anyway."""
+    assert _normalize(_Chart("assets")) == _normalize({"name": "assets"})
+
+
+def test_objects_nest():
+    chart = _Chart("assets")
+    chart.parent = _Chart("root")
+    assert _normalize(chart) == {"name": "assets", "parent": {"name": "root"}}
+
+
+def test_a_slotted_object_is_read_through_its_slots():
+    assert _normalize(_Slotted("asset")) == {"kind": "asset"}
+
+
+def test_methods_are_not_state():
+    """The target language puts methods on the instance in some styles and the
+    prototype in others, and neither is behavior worth comparing."""
+    chart = _Chart("assets")
+    chart.hook = lambda: None
+    assert _normalize(chart) == {"name": "assets"}
+
+
+def test_values_with_no_readable_attributes_keep_the_str_fallback():
+    """A `Path` declares `__slots__ = ()`. Reading "declares slots" as "is an
+    inspectable object" would render it as `{}` and lose the path entirely."""
+    for opaque in (decimal.Decimal("1.5"), pathlib.Path("a"), b"xy", "s", 3, None):
+        assert _normalize(opaque) is opaque
+
+
+def test_a_class_object_is_not_walked():
+    """`vars(SomeClass)` is the class body - methods, `__module__`, the lot -
+    and none of it is the value that was passed."""
+    assert _normalize(_Chart) is _Chart
+
+
+def test_a_cycle_terminates_instead_of_taking_the_driver_down():
+    """A ledger holding a book that points back at it is ordinary object graph.
+    RecursionError here escapes the per-input try and loses the whole module's
+    results, not one call's."""
+    chart = _Chart("assets")
+    chart.parent = chart
+    assert _normalize(chart) == {"name": "assets", "parent": {"__cycle__": True}}
+
+    loop = {}
+    loop["self"] = loop
+    assert _normalize(loop) == {"self": {"__cycle__": True}}
+
+    items = []
+    items.append(items)
+    assert _normalize(items) == [{"__cycle__": True}]
+
+
+def test_repetition_is_not_a_cycle():
+    """The same object twice in one container is not a loop, and tagging it
+    would report drift against a translation that simply held two of them."""
+    shared = _Chart("assets")
+    assert _normalize([shared, shared]) == [{"name": "assets"}, {"name": "assets"}]

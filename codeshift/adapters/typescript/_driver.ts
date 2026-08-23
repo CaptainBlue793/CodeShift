@@ -64,20 +64,29 @@ function canon(value: any): string {
 // tagged, sorted array for sets, a plain object for Maps (matching a Python
 // dict), and epoch milliseconds for dates. See `_driver.py:_normalize` — these
 // two functions have to stay in step.
-function normalize(value: any): any {
+function normalize(value: any, seen: ReadonlySet<any> = new Set()): any {
   if (value instanceof Set) {
-    return { __set__: [...value].map(normalize).sort((a, b) => (canon(a) < canon(b) ? -1 : canon(a) > canon(b) ? 1 : 0)) };
+    const items = [...value].map((v) => normalize(v, seen));
+    return { __set__: items.sort((a, b) => (canon(a) < canon(b) ? -1 : canon(a) > canon(b) ? 1 : 0)) };
   }
   if (value instanceof Map) {
     const out: Record<string, any> = {};
-    for (const [key, v] of value) out[String(key)] = normalize(v);
+    for (const [key, v] of value) out[String(key)] = normalize(v, seen);
     return out;
   }
   if (value instanceof Date) return { __datetime__: value.getTime() };
-  if (Array.isArray(value)) return value.map(normalize);
+
   if (value !== null && typeof value === "object") {
+    // An object holding something that points back at it is ordinary object
+    // graph, and following it forever throws RangeError -- which the harness
+    // would read as one side raising where the other did not. The Python
+    // driver emits this same tag for the same shape, so a cycle on both sides
+    // compares equal. See `_driver.py:_normalize`; these two stay in step.
+    if (seen.has(value)) return { __cycle__: true };
+    const inner = new Set(seen).add(value);
+    if (Array.isArray(value)) return value.map((v) => normalize(v, inner));
     const out: Record<string, any> = {};
-    for (const [key, v] of Object.entries(value)) out[key] = normalize(v);
+    for (const [key, v] of Object.entries(value)) out[key] = normalize(v, inner);
     return out;
   }
   return value;

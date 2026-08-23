@@ -12,7 +12,7 @@ v1 targets Python → TypeScript; the architecture is language-agnostic behind
 pluggable adapters.
 
 <sub>
-Python 3.12 · LangGraph · Ollama · tree-sitter · networkx · Hypothesis · Streamlit · 248 tests passing
+Python 3.12 · LangGraph · Ollama · tree-sitter · networkx · Hypothesis · Streamlit · 260 tests passing
 </sub>
 
 </div>
@@ -207,7 +207,7 @@ tests/fixtures/                   # sample_app, class_app, cyclic_app, ledger_ap
 ## Tests
 
 ```bash
-"$PY" -m pytest tests -q        # 248 tests
+"$PY" -m pytest tests -q        # 260 tests
 "$PY" -m mypy codeshift
 "$PY" -m pyright
 ```
@@ -255,11 +255,13 @@ untested until someone runs it on a machine with Docker.
   report drift on ordinary rounding differences.
 - Values with no JSON encoding are normalized to a shared form — sets and JS
   `Set`s to a tagged sorted array, JS `Map`s to plain objects, dates to epoch
-  milliseconds — but **a naive Python `datetime` is read as UTC**, because it
-  carries no zone while a JS `Date` is always an instant. Code where that
-  assumption is wrong will compare wrongly. Types outside that list (`Decimal`,
-  `bytes`, custom `__eq__`) still fall back to `str()` and can differ on
-  formatting alone.
+  milliseconds, and an object to its attributes — but **a naive Python
+  `datetime` is read as UTC**, because it carries no zone while a JS `Date` is
+  always an instant. Code where that assumption is wrong will compare wrongly.
+  Types outside that list (`Decimal`, `bytes`, and anything else with no
+  readable attributes) still fall back to `str()` and can differ on formatting
+  alone. An object graph that loops is cut at the repeat and tagged, on both
+  sides, rather than followed.
 - Parse errors are swallowed (`adapters/python/parser.py`) instead of being
   surfaced in the run's error list.
 - Hypothesis cannot shrink (`equivalence/inputs.py`), so a single bug arrives as

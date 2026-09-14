@@ -215,29 +215,6 @@ def test_dashboard_counts_a_genuinely_checked_module():
     assert _metric(app, "Not verified") == "0"
 
 
-_CHECKED = {"utils": {
-    "module": "utils", "status": "idiomatic", "attempts": 1,
-    "divergences": [], "type_errors": [], "verified_functions": ["slugify"],
-    "unverified": [],
-}}
-
-
-def test_dashboard_says_when_verification_ran_without_isolation():
-    """A "Verified: 1" next to no warning would read as stronger evidence than
-    it is — the code ran on the host. The report says so; so must the page."""
-    app = _render_with(_CHECKED, isolation="host")
-
-    assert _metric(app, "Verified") == "1"
-    assert any("without isolation" in w.value for w in app.warning)
-
-
-def test_dashboard_is_quiet_about_isolation_when_sandboxed():
-    app = _render_with(_CHECKED, isolation="docker")
-
-    assert not any("without isolation" in w.value for w in app.warning)
-    assert any("no network" in c.value for c in app.caption)
-
-
 # ------------------------------------------------- three-column comparison
 # The panes are source | what the model emitted | the file on disk, so the
 # highlighting between the last two is the formatter's contribution. That is

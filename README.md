@@ -66,7 +66,7 @@ is not evidence of anything:
 | Stage | What it does | Why |
 |---|---|---|
 | **Generate inputs** | Values per parameter type, plus constructor arguments when the callable is a method | A method needs a receiver. Each call gets a *fresh* one, so a diverging call cannot poison every call after it and misattribute the blame. |
-| **Run both sides** | Original and translation in subprocesses on identical inputs, isolated in Docker when it is available | The only way to catch semantics the type system cannot see — `strip()` vs `trim()` disagreeing on `\x1c`, `split()` vs a regex disagreeing on Unicode whitespace. Both were real findings. |
+| **Run both sides** | Original and translation in subprocesses on identical inputs | The only way to catch semantics the type system cannot see — `strip()` vs `trim()` disagreeing on `\x1c`, `split()` vs a regex disagreeing on Unicode whitespace. Both were real findings. |
 | **Compare** | Return value, exception type, *and the object's attributes after the call* | Without the last one, a mutating method that returns nothing compares `None` against `undefined` and passes having tested nothing. |
 | **Name what was skipped** | `async def`, properties, constructors that cannot be built from generated arguments — each recorded by name | An untested module must not be indistinguishable from a clean one. "Verified equivalent" always means code ran and matched. |
 
@@ -77,7 +77,7 @@ time, which surfaces drift, and fixing that drift can reintroduce the type error
 is the formatting backstop.
 
 **6 · Report** — a Markdown migration report: per-module verdict, attempts, what was
-checked, what was not, and the isolation the run actually had.
+checked, and what was not.
 
 ## Stack
 
@@ -86,30 +86,11 @@ Everything is **free / open-source — no API key, no cost.**
 Python 3.12 · LangGraph (orchestration) · **local Ollama** LLM (default
 `qwen3:14b`; set `qwen2.5:7b` in `codeshift/config.py` for faster, lower-quality runs)
 · tree-sitter + `ast` (parsing) · networkx (dependency DAG) · Hypothesis + pytest
-(differential testing; TypeScript executed live via `tsx`) · Docker (execution
-sandbox, optional — see below) · mypy + `tsc` (type oracles) · Prettier (idiom
-backstop).
+(differential testing; TypeScript executed live via `tsx`) · mypy + `tsc` (type
+oracles) · Prettier (idiom backstop).
 
 The LLM is isolated in `codeshift/llm/client.py`, so swapping the backend is a
 one-file change.
-
-## Sandboxing
-
-The test-equivalence agent **executes** the translated code, which a language
-model wrote. `sandbox` in `codeshift/config.py` decides what that execution gets:
-
-| Setting | Behaviour |
-|---|---|
-| `"docker"` | Requires isolation. Both sides run in a throwaway container — no network, read-only mounts, non-root, memory/CPU/PID capped. **If Docker is unavailable, nothing is executed** and the affected modules are reported as unverified rather than run unprotected. Use this for code you did not write. |
-| `"auto"` (default) | Isolates when Docker is present; otherwise runs on the host and says so, in the log and in the report. |
-| `"host"` | Deliberate, unisolated execution. Fast, and fine for a fixture you wrote yourself. |
-
-The sandbox images build themselves on first use (`codeshift/sandbox/images/`)
-and are tagged by a hash of their Dockerfile, so editing one rebuilds it. The
-build needs the network; the runs never have it.
-
-A run's isolation is stated at the top of `REPORT.md` — "verified equivalent"
-means something different depending on where the code ran.
 
 ## Status
 
@@ -143,11 +124,8 @@ pointing this at a real codebase.
   ```bash
   ollama pull qwen3:14b
   ```
-- **Node.js** (for the TypeScript target: `npx tsx` runs it, `npx prettier` formats it).
-  Not needed for running translated code under `sandbox="docker"` — the image
-  carries its own — but still needed for the `tsc` and Prettier passes.
-- **Docker** — optional, and the difference between isolated and unisolated
-  execution. See [Sandboxing](#sandboxing).
+- **Node.js** (for the TypeScript target: `npx tsx` runs it, `tsc` checks it,
+  `npx prettier` formats it).
 
 ## Setup
 
@@ -195,7 +173,6 @@ codeshift/
     prompts/pitfalls/<a>-<b>.md   # per-pair semantic trip-wires (optional)
   agents/                         # one module per agent = one graph node
   adapters/                       # per-language plug-ins (python/, typescript/)
-  sandbox/                        # container isolation (policy.py decides, loudly)
   depgraph/                       # dependency graph, cycle handling, order
   equivalence/  report/  utils/
 ui/                               # Streamlit dashboard (app.py, runner.py)
@@ -207,7 +184,7 @@ tests/fixtures/                   # sample_app, class_app, cyclic_app, ledger_ap
 ## Tests
 
 ```bash
-"$PY" -m pytest tests -q        # 260 tests
+"$PY" -m pytest tests -q        # 239 tests
 "$PY" -m mypy codeshift
 "$PY" -m pyright
 ```
@@ -243,11 +220,9 @@ that type-checks and throws `ReferenceError` on every call, still 2 of 3; asked
 for the local helper, 3 of 3. The real fix is not to grade a cycle member until
 its whole cycle is emitted, and that is not done.
 
-**The Docker sandbox has never actually run a container.** Docker is not
-installed on the development machine, so the container path is covered by unit
-tests asserting the argv, mounts and flags — not by execution. `sandbox="docker"`
-is the documented way to run untrusted code safely; treat that claim as
-untested until someone runs it on a machine with Docker.
+**Generated code runs on your machine, unisolated.** The differential test
+executes both the original and the model's translation as ordinary subprocesses
+with your privileges. Only point CodeShift at code you trust.
 
 **Comparison gaps that can produce wrong reports**, rather than crashes:
 

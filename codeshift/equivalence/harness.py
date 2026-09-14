@@ -9,7 +9,7 @@ and, just as importantly, rather than diverging.
 That second point is the whole reason `_INFRASTRUCTURE` exists. A runner that
 cannot start returns a failure per input, and to `classify_divergence` a side
 that failed against a side that returned is textbook `exception_behavior`. So a
-stopped Docker daemon would otherwise arrive as a wall of behavioral findings
+missing Node install would otherwise arrive as a wall of behavioral findings
 about code that was never run. Infrastructure failures are not evidence.
 
 Inputs are returned so the caller can cache and reuse them across retries — that
@@ -25,7 +25,7 @@ from codeshift.equivalence.inputs import generate_inputs
 
 #: Runner sentinels that mean "this never executed". Distinct from `*_run_error`
 #: and `source_timeout`, which are things the code itself did.
-_INFRASTRUCTURE = {"runtime_unavailable", "sandbox_unavailable"}
+_INFRASTRUCTURE = {"runtime_unavailable"}
 
 
 def _not_executed(outcomes: list[CallOutcome]) -> Optional[str]:
@@ -76,8 +76,7 @@ def check_equivalence(
     """Return (divergences, unverifiable, inputs_used_by_func).
 
     Each `Untestable` carries the reason its function was never compared, so the
-    report can say which — a missing Node install and an unavailable sandbox are
-    both "no evidence", but only one of them is fixed by installing Node.
+    report can say why there is no evidence for it.
 
     Pass `inputs_by_func` from a previous call to reuse the same inputs (so a
     retry is tested on exactly the inputs whose failures were fed back). Each

@@ -80,9 +80,16 @@ class CallOutcome:
     state: Optional[dict] = None
 
 
+#: `RunResult` exit codes that mean "the code never ran", as distinct from "the
+#: code failed". Callers must not read one as the other: a missing runtime is
+#: not a failing test.
+EXIT_TIMEOUT = 124
+EXIT_UNAVAILABLE = 125
+
+
 @dataclass
 class RunResult:
-    """Raw process result (used by the sandbox runner)."""
+    """Raw process result from a runner subprocess."""
     stdout: str = ""
     stderr: str = ""
     exit_code: int = 0
@@ -130,7 +137,7 @@ class SourceAdapter(ABC):
         inputs: list[list],
         ctor_inputs: Optional[list[list]] = None,
     ) -> list[CallOutcome]:
-        """Invoke `module.func` once per input arg-list inside a sandbox.
+        """Invoke `module.func` once per input arg-list in a subprocess.
 
         `func` may be qualified (`Cart.add_item`). `ctor_inputs`, when given,
         holds one constructor arg-list per input: the receiver is rebuilt for
@@ -182,7 +189,7 @@ class TargetAdapter(ABC):
         inputs: list[list],
         ctor_inputs: Optional[list[list]] = None,
     ) -> list[CallOutcome]:
-        """Invoke `module.func` once per input arg-list inside a sandbox.
+        """Invoke `module.func` once per input arg-list in a subprocess.
 
         Mirrors `SourceAdapter.run`; `func` is the *target's* name for the
         callable (see `utils.naming.build_symbol_map`).

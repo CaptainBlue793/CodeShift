@@ -7,7 +7,7 @@ plain dicts. Two deliberate choices:
   npm is an unrelated squatter that prints a warning and exits non-zero.
 * **Ambient-only diagnostics are dropped** (see `_AMBIENT_CODES`). The check runs
   without `@types/node`, so `require`/`module`/`process` resolve to "cannot find
-  name". Those describe our sandbox, not the translation — feeding them back to
+  name". Those describe our check environment, not the translation — feeding them back to
   the translator would send it chasing phantom errors.
 
 Like the runner, this degrades honestly: no Node toolchain means an empty

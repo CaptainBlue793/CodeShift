@@ -20,7 +20,6 @@ import streamlit as st  # noqa: E402
 
 from codeshift.config import settings  # noqa: E402
 from codeshift.equivalence.diff import render_call  # noqa: E402
-from codeshift.sandbox.policy import describe  # noqa: E402
 from codeshift.verification import LABEL, is_trustworthy, unverified_names, verdict  # noqa: E402
 from ui import theme  # noqa: E402
 from ui.diffview import (  # noqa: E402
@@ -175,17 +174,6 @@ def _render_summary(snapshot: dict, handle: RunHandle | None) -> None:
     # unverifiable module still advances the run.
     if handle and handle.running:
         st.progress(min(done / len(order), 1.0) if order else 0.0, text="Running…")
-
-    # The "Verified" metric above means something different depending on where
-    # the code ran, so the two are shown together. The report carries the same
-    # line; see codeshift.verification on why these must not drift apart.
-    isolation = snapshot.get("isolation")
-    if isolation == "host":
-        st.warning(describe("host"), icon="⚠")
-    elif isolation == "unavailable":
-        st.error(describe("unavailable"), icon="🚫")
-    elif isolation == "docker":
-        st.caption(f"🔒 {describe('docker')}")
 
 
 def _render_code(snapshot: dict) -> None:

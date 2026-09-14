@@ -21,7 +21,6 @@ from __future__ import annotations
 from codeshift.adapters import registry
 from codeshift.candidates import record_candidate
 from codeshift.equivalence.harness import check_equivalence
-from codeshift.sandbox import policy
 from codeshift.state import MigrationState, copy_unit, get_files, unchanged
 from codeshift.utils.logging import get_logger
 
@@ -90,6 +89,4 @@ def run(state: MigrationState) -> dict:
         unit.get("attempts", 0),
         candidate,
     )
-    # Recorded from the one node that actually executes code, so the report
-    # states the isolation the run *had*, not the isolation it was configured for.
-    return {"files": files, "isolation": policy.effective()}
+    return {"files": files}

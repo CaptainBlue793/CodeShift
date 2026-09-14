@@ -115,35 +115,9 @@ def test_harness_flags_unverifiable_when_target_missing():
     assert divergences == []
 
 
-# --- an unavailable sandbox is "never checked", never drift ---
-
-class _UnsandboxedSource:
-    """Stands in for a source runner that could not start at all."""
-    def run(self, root, module, func, inputs, ctor_inputs=None):
-        return [CallOutcome(ok=False, error="sandbox_unavailable") for _ in inputs]
-
-
 class _WorkingTarget:
     def run(self, root, module, func, inputs, ctor_inputs=None):
         return [CallOutcome(ok=True, value=1) for _ in inputs]
-
-
-def test_harness_reports_unavailable_sandbox_as_unverifiable_not_drift():
-    """The failure mode this guards: a stopped Docker daemon makes every source
-    call fail while the target returns fine, which reads as `exception_behavior`
-    on every input — a wall of behavioral findings about code never executed."""
-    sigs = [FuncSig(name="make_user", params=["int", "str"])]
-    divergences, unverifiable, _ = check_equivalence(
-        source_adapter=_UnsandboxedSource(),
-        source_root="unused",
-        target_adapter=_WorkingTarget(),
-        target_root="unused",
-        module="models",
-        signatures=sigs,
-        n=5,
-    )
-    assert divergences == []
-    assert [(u.name, u.reason) for u in unverifiable] == [("make_user", "sandbox_unavailable")]
 
 
 def test_harness_still_reports_genuine_source_errors_as_divergence():

@@ -13,7 +13,6 @@ module the harness could not execute is never counted as a success — see
 from __future__ import annotations
 
 from codeshift.equivalence.diff import render_call
-from codeshift.sandbox.policy import describe
 from codeshift.state import MigrationState
 from codeshift.verification import (
     LABEL,
@@ -65,14 +64,7 @@ def build_report(state: MigrationState) -> str:
 
     lines = ["# CodeShift Migration Report", "", summary, ""]
 
-    # How the code was executed belongs next to the claim that it was verified:
-    # "verified equivalent" on the host means generated code ran with the
-    # reader's privileges, and that is not a detail to bury in a log.
-    isolation = state.get("isolation")
-    if isolation:
-        lines += [f"> {describe(isolation)}", ""]
-
-    # Same reasoning as isolation: this changes what the table below means. Every
+    # Stated up front because it changes what the table below means. Every
     # other module is translated with its dependencies already in hand; the
     # module a cycle is broken at is not, so it had less to work with.
     cycles = state.get("cycles") or []

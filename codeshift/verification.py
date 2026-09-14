@@ -61,7 +61,6 @@ REASON_LABEL: dict[str, str] = {
         "the function requires keyword-only arguments, which the harness cannot supply"
     ),
     "runtime_unavailable": "the target runtime was unavailable",
-    "sandbox_unavailable": "the sandbox was unavailable, so nothing was executed",
 }
 
 

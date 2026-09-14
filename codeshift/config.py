@@ -5,7 +5,6 @@ The LLM is local Ollama — free, no API key. The whole stack is now free/OSS.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -26,16 +25,7 @@ class Settings:
     use_llm_idiom: bool = False      # LLM idiomatic rewrite (free now; off by default for speed)
     recursion_limit: int = 500       # LangGraph superstep cap (real work is bounded by max_retries)
 
-    # --- sandbox: how the differential run executes generated code ---
-    #
-    # "docker" requires isolation and refuses to execute without it (use this
-    # for code you did not write); "auto" isolates when Docker is present and
-    # otherwise runs on the host, saying so in the log and the report; "host"
-    # is deliberate, unisolated execution. See codeshift/sandbox/policy.py.
-    sandbox: Literal["auto", "docker", "host"] = "auto"
-    sandbox_memory: str = "512m"     # per-container memory cap
-    sandbox_cpus: str = "1"          # per-container CPU cap
-    sandbox_timeout: int = 60        # seconds per differential call batch
+    run_timeout: int = 60            # seconds per differential call batch (Python side)
 
     # --- type oracles (free: local tsc via npx, local mypy) ---
     use_tsc_oracle: bool = True      # typecheck emitted code before the differential run

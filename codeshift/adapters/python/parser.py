@@ -2,7 +2,7 @@
 
 Discovers modules under a root, maps file paths to dotted module names, resolves
 each module's imports down to the set of **internal** modules it depends on, and
-supports signature extraction + sandboxed execution for differential testing.
+supports signature extraction + subprocess execution for differential testing.
 """
 from __future__ import annotations
 

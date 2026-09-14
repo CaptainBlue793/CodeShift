@@ -52,7 +52,6 @@ class MigrationState(TypedDict, total=False):
     files: dict[str, FileUnit]
     current: Optional[str]           # module being processed now
     max_retries: int
-    isolation: Optional[str]         # isolation the differential run got (sandbox.policy)
     report: Optional[str]
     errors: list[str]
 
@@ -77,7 +76,6 @@ def new_state(
         files={},
         current=None,
         max_retries=max_retries,
-        isolation=None,
         report=None,
         errors=[],
     )

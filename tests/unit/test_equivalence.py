@@ -53,6 +53,51 @@ def test_classify_value_mismatch():
     assert d["category"] == "value_mismatch"
 
 
+def _values_match(source, target) -> bool:
+    return classify_divergence("f", [], CallOutcome(True, source), CallOutcome(True, target)) is None
+
+
+def test_last_bit_float_rounding_is_not_drift():
+    """`0.1 + 0.2` in one order, `0.3` in another: both implementations are right."""
+    assert _values_match(0.1 + 0.2, 0.3)
+    assert _values_match(1e-17, 0.0)
+
+
+def test_a_real_float_difference_is_still_drift():
+    assert not _values_match(0.3, 0.30001)
+    assert not _values_match(100.0, 100.5)
+
+
+def test_ints_are_compared_exactly():
+    """Past 2**53 a JS number rounds; a relative tolerance would hide that."""
+    assert not _values_match(10**17 + 1, 10**17)
+
+
+def test_an_int_and_an_equal_float_match():
+    """JSON.stringify(3.0) is `3`, so the target side arrives as an int."""
+    assert _values_match(3.0, 3)
+
+
+def test_nan_matches_nan_and_nothing_else():
+    assert _values_match(float("nan"), float("nan"))
+    assert not _values_match(float("nan"), 0.0)
+
+
+def test_a_bool_does_not_match_a_number():
+    assert not _values_match(True, 1)
+    assert not _values_match(False, 0.0)
+
+
+def test_tolerance_reaches_into_containers_and_object_state():
+    assert _values_match({"total": [0.1 + 0.2, 1]}, {"total": [0.3, 1]})
+    assert not _values_match([0.3], [0.3, 0.3])
+    assert not _values_match({"a": 0.3}, {"b": 0.3})
+
+    source = CallOutcome(True, None, state={"balance": 0.1 + 0.2})
+    target = CallOutcome(True, None, state={"balance": 0.3})
+    assert classify_divergence("Account.deposit", [], source, target) is None
+
+
 def test_classify_exception_behavior():
     d = classify_divergence("f", [1], CallOutcome(True, 2), CallOutcome(False, error="TypeError"))
     assert d is not None

@@ -1,13 +1,46 @@
 """Compare original vs translated call outcomes and classify divergences."""
 from __future__ import annotations
 
+import math
 from typing import Any, Callable, Optional
 
 from codeshift.adapters.base import CallOutcome
 
 
+def _numbers_equal(a: float, b: float) -> bool:
+    """Equal within the configured tolerance when either side is a float.
+
+    Two correct implementations of the same arithmetic can disagree in the last
+    bits - `sum()` versus a `reduce`, `a * b / c` versus `a / c * b` - and an
+    exact comparison reports that as drift the translator cannot fix, burning
+    its retries. Two ints stay exact: a JS number past 2**53 silently loses
+    precision, and that *is* drift. NaN matches NaN, since both sides agreed.
+    """
+    from codeshift.config import settings
+
+    if isinstance(a, int) and isinstance(b, int):
+        return a == b
+    if math.isnan(a) or math.isnan(b):
+        return math.isnan(a) and math.isnan(b)
+    return math.isclose(a, b, rel_tol=settings.float_rel_tol, abs_tol=settings.float_abs_tol)
+
+
 def _equal(a: Any, b: Any) -> bool:
-    # TODO: float tolerance and structural normalization for nested containers.
+    """Structural equality, tolerant only where floats meet.
+
+    Walks lists and dicts so a float nested in a returned structure or an
+    object's state gets the same tolerance as a bare one. `bool` is excluded
+    from the numeric path: `True == 1` in Python, but a translation returning
+    `1` where the source returned `True` is not something to wave through.
+    """
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return _numbers_equal(a, b)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_equal(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_equal(a[k], b[k]) for k in a)
     return a == b
 
 

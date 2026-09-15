@@ -184,7 +184,7 @@ tests/fixtures/                   # sample_app, class_app, cyclic_app, ledger_ap
 ## Tests
 
 ```bash
-"$PY" -m pytest tests -q        # 239 tests
+"$PY" -m pytest tests -q        # 246 tests
 "$PY" -m mypy codeshift
 "$PY" -m pyright
 ```
@@ -226,8 +226,10 @@ with your privileges. Only point CodeShift at code you trust.
 
 **Comparison gaps that can produce wrong reports**, rather than crashes:
 
-- Floats are compared exactly (`equivalence/diff.py`), so numeric code would
-  report drift on ordinary rounding differences.
+- Floats are compared within a tolerance (`float_rel_tol` / `float_abs_tol` in
+  `codeshift/config.py`), but `NaN` and `Infinity` are not: the TypeScript driver's
+  `JSON.stringify` turns them into `null` while Python keeps them, so a function
+  that returns one on both sides still reports drift.
 - Values with no JSON encoding are normalized to a shared form — sets and JS
   `Set`s to a tagged sorted array, JS `Map`s to plain objects, dates to epoch
   milliseconds, and an object to its attributes — but **a naive Python

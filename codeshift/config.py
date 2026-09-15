@@ -26,6 +26,9 @@ class Settings:
     recursion_limit: int = 500       # LangGraph superstep cap (real work is bounded by max_retries)
 
     run_timeout: int = 60            # seconds per differential call batch (Python side)
+    # Float comparison in the differential diff. Ints are always compared exactly.
+    float_rel_tol: float = 1e-9      # relative: absorbs last-bit rounding, not real drift
+    float_abs_tol: float = 1e-12     # absolute: for results that should be ~0 (1e-17 vs 0.0)
 
     # --- type oracles (free: local tsc via npx, local mypy) ---
     use_tsc_oracle: bool = True      # typecheck emitted code before the differential run
